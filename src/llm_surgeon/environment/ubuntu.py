@@ -47,5 +47,8 @@ class UbuntuProfile(EnvironmentProfile):
                     "(B200 needs the R570+ open kernel modules) — see docs/deployment-ubuntu.md — or set "
                     "environment.allow_driver_changes: true to let stage 01 run 'ubuntu-drivers install --gpgpu'."
                 )
-        if not self.probe.which("nvcc") and "llama_cpp" in components:
+        nvcc = self.probe.nvcc_path()
+        if not nvcc and "llama_cpp" in components:
             assessment.notes.append("nvcc not found: llama.cpp will be built for CPU unless quantization.gguf.build_cuda=on (which then fails).")
+        elif nvcc and nvcc != self.probe.which("nvcc") and "llama_cpp" in components:
+            assessment.notes.append(f"nvcc is not on PATH; using the CUDA toolkit at {nvcc} for the llama.cpp CUDA build.")

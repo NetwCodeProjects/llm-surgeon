@@ -30,8 +30,9 @@ class LambdaStackProfile(EnvironmentProfile):
                 "fix the image (e.g. reinstall Lambda Stack per Lambda's documentation) or use --ubuntu with "
                 "environment.allow_driver_changes."
             )
-        if self.probe.which("nvcc"):
-            assessment.notes.append(f"Reusing host CUDA toolkit (nvcc {self.probe.nvcc_version() or 'unknown version'}).")
+        nvcc = self.probe.nvcc_path()
+        if nvcc:
+            assessment.notes.append(f"Reusing host CUDA toolkit (nvcc {self.probe.nvcc_version() or 'unknown version'} at {nvcc}).")
 
     def torch_plan(self, config: dict[str, Any]) -> dict[str, Any]:
         source = config["environment"]["torch_source"]

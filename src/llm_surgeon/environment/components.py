@@ -28,7 +28,7 @@ from ..errors import ExitCode, PipelineError
 from ..fsutil import atomic_write_json, read_json, remove_tree, sha256_obj
 from ..subprocesses import CommandRunner, bin_in_venv, child_env, python_in_venv
 from ..telemetry import EventLogger, utc_now
-from .detect import HostProbe, cuda_arch_from_capability
+from .detect import NVCC_ARCH_HINT, HostProbe, resolve_cuda_architectures, unsupported_cuda_architectures
 
 COMPONENTS_FILE = "components.json"
 TORCH_FAMILY_RE = re.compile(r"^(torch|torchvision|torchaudio|triton|pytorch-triton|nvidia-[a-z0-9-]+)\s*(==|>=|<=|~=|@)", re.I)
@@ -97,10 +97,8 @@ def component_specs(config: dict[str, Any], torch_plan: dict[str, Any], probe: H
     platform_tag = f"{sys.platform}-{os.uname().machine if hasattr(os, 'uname') else 'unknown'}"
     common = {"python_version": env["python_version"], "torch": torch_plan, "platform": platform_tag}
     cuda_arch = gguf["cuda_architectures"]
-    if cuda_arch == "auto" and probe is not None:
-        gpus = probe.gpus() or []
-        archs = sorted({a for a in (cuda_arch_from_capability(g.get("compute_capability")) for g in gpus) if a})
-        cuda_arch = ";".join(archs) if archs else "auto"
+    if probe is not None:
+        cuda_arch = resolve_cuda_architectures(cuda_arch, probe.gpus())
     return {
         "heretic": {
             **common,
@@ -377,10 +375,18 @@ class ComponentManager:
                 f"Tag {spec['revision']} resolved to {commit}, expected {configspec.LLAMA_CPP_PINNED_COMMIT}",
                 hint="The upstream tag moved; investigate before trusting the build.",
             )
-        nvcc = self.probe.which("nvcc")
+        nvcc = self.probe.nvcc_path()
         build_cuda = spec["build_cuda"] == "on" or (spec["build_cuda"] == "auto" and nvcc is not None)
         if spec["build_cuda"] == "on" and nvcc is None:
             raise PipelineError(ExitCode.ENVIRONMENT, "E_NVCC_MISSING", "quantization.gguf.build_cuda=on but nvcc was not found")
+        unsupported = unsupported_cuda_architectures(spec["cuda_architectures"], self.probe.nvcc_gpu_codes()) if build_cuda else []
+        if unsupported:
+            raise PipelineError(
+                ExitCode.ENVIRONMENT,
+                "E_NVCC_ARCH_UNSUPPORTED",
+                f"nvcc {self.probe.nvcc_version()} at {nvcc} cannot compile for sm_{', sm_'.join(unsupported)} (from nvcc --list-gpu-code)",
+                hint=NVCC_ARCH_HINT,
+            )
         build = base / f"build-{fingerprint[:12]}"
         remove_tree(build)
         flags = [
@@ -392,10 +398,11 @@ class ComponentManager:
         ]
         if build_cuda:
             flags.append("-DGGML_CUDA=ON")
+            flags.append(f"-DCMAKE_CUDA_COMPILER={nvcc}")  # the toolkit may not be on PATH (HostProbe.nvcc_path)
             if spec["cuda_architectures"] not in (None, "auto"):
                 flags.append(f"-DCMAKE_CUDA_ARCHITECTURES={spec['cuda_architectures']}")
         self._run(["cmake", "-S", str(src), "-B", str(build), *flags], "llama-cpp-configure")
-        jobs = str(max(1, (os.cpu_count() or 2) - 1))
+        jobs = str(max(1, self.probe.available_cpus() - 1))
         self._run(["cmake", "--build", str(build), "--config", "Release", "-j", jobs, "--target", *LLAMA_TARGETS], "llama-cpp-build", timeout=14400)
         bin_dir = build / "bin"
         conv_venv = self.tools_dir / "envs" / f"llama-convert-{fingerprint[:12]}"

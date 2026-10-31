@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .detect import NVCC_ARCH_HINT, resolve_cuda_architectures, unsupported_cuda_architectures
+
 CATEGORIES = ("unsupported_configuration", "estimated_resource_shortage", "unverified_execution")
 
 VLLM_FP8_BASIS = (
@@ -48,8 +50,31 @@ def finding(category: str, rule: str, message: str, basis: str) -> dict[str, str
     return {"category": category, "rule": rule, "message": message, "basis": basis}
 
 
-def assess(config, gpus: list[dict[str, Any]], *, needs_gpu: bool, heretic: bool, source_size: int | None) -> list[dict[str, str]]:
+def assess(
+    config,
+    gpus: list[dict[str, Any]],
+    *,
+    needs_gpu: bool,
+    heretic: bool,
+    source_size: int | None,
+    llama_cpp: bool = False,
+    nvcc: str | None = None,
+    nvcc_gpu_codes: set[str] | None = None,
+) -> list[dict[str, str]]:
     findings = []
+    build_cuda = config.get("quantization.gguf.build_cuda")
+    if llama_cpp and build_cuda != "off" and (nvcc or build_cuda == "on"):
+        archs = resolve_cuda_architectures(config.get("quantization.gguf.cuda_architectures"), gpus)
+        missing = unsupported_cuda_architectures(archs, nvcc_gpu_codes)
+        if missing:
+            findings.append(
+                finding(
+                    "unsupported_configuration",
+                    "gguf_cuda_arch",
+                    f"The CUDA toolkit at {nvcc} cannot compile llama.cpp for sm_{', sm_'.join(missing)} (from the GPUs' compute capability). {NVCC_ARCH_HINT}",
+                    "nvcc --list-gpu-code of the host toolkit; llama.cpp is built with -DCMAKE_CUDA_ARCHITECTURES from quantization.gguf.cuda_architectures",
+                )
+            )
     formats = config.get("quantization.formats") or []
     fp8_test = config.get("quantization.enabled") and "fp8" in formats and config.get("quantization.fp8.verify_backend") == "vllm"
     cap = _capability(gpus[0]) if gpus else None

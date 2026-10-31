@@ -39,6 +39,9 @@ class PreflightStage(Stage):
             "gpus": probe.gpus(),
             "cuda_driver_version": probe.cuda_driver_version(),
             "nvcc_version": probe.nvcc_version(),
+            "nvcc_path": probe.nvcc_path(),
+            "nvcc_gpu_codes": sorted(probe.nvcc_gpu_codes() or []),
+            "available_cpus": probe.available_cpus(),
             "lambda_stack_markers": lambda_stack_markers(probe),
             "hf_token_present": bool(run.hf_token()),
         }
@@ -90,7 +93,17 @@ class PreflightStage(Stage):
         source_size = known_source_size(config)
         estimate = estimate_disk(config, source_size)
         facts["disk_estimate"] = estimate
-        findings = assess(config, gpus, needs_gpu=needs_gpu(config), heretic="heretic" in components, source_size=source_size)
+        nvcc = probe.nvcc_path() if "llama_cpp" in components else None
+        findings = assess(
+            config,
+            gpus,
+            needs_gpu=needs_gpu(config),
+            heretic="heretic" in components,
+            source_size=source_size,
+            llama_cpp="llama_cpp" in components,
+            nvcc=nvcc,
+            nvcc_gpu_codes=probe.nvcc_gpu_codes() if nvcc else None,
+        )
         if estimate["total_bytes"] is not None:
             needed = estimate["total_bytes"] + float(config.get("environment.disk_buffer_gb")) * 1024**3
             if free < needed:

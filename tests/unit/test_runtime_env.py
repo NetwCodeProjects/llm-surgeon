@@ -199,3 +199,45 @@ def test_disk_estimate_is_unknown_without_metadata(tmp_path):
 
 def test_pins_are_consistent():
     assert len(configspec.HERETIC_PINNED_REVISION) == 40 and len(configspec.LLAMA_CPP_PINNED_COMMIT) == 40
+
+
+def test_nvcc_is_found_in_the_standard_toolkit_location_when_not_on_path(tmp_path, monkeypatch):
+    probe = HostProbe(allow_exec=False, root=str(tmp_path))
+    monkeypatch.setattr(probe, "which", lambda name: None)
+    assert probe.nvcc_path() is None
+    for version in ("12.9", "13.2"):
+        nvcc = tmp_path / "usr" / "local" / f"cuda-{version}" / "bin" / "nvcc"
+        nvcc.parent.mkdir(parents=True)
+        nvcc.write_text("#!/bin/sh\n")
+        nvcc.chmod(0o755)
+    assert probe.nvcc_path().replace("\\", "/").endswith("cuda-13.2/bin/nvcc"), "newest versioned toolkit"
+    default = tmp_path / "usr" / "local" / "cuda" / "bin" / "nvcc"
+    default.parent.mkdir(parents=True)
+    default.write_text("#!/bin/sh\n")
+    default.chmod(0o755)
+    assert probe.nvcc_path() == str(default), "/usr/local/cuda (the image's default symlink) wins"
+    monkeypatch.setattr(probe, "which", lambda name: "/opt/bin/nvcc")
+    assert probe.nvcc_path() == "/opt/bin/nvcc", "PATH wins"
+
+
+def test_available_cpus_respects_the_cgroup_quota(tmp_path):
+    probe = HostProbe(allow_exec=False, root=str(tmp_path))
+    unlimited = probe.available_cpus()
+    cgroup = tmp_path / "sys" / "fs" / "cgroup"
+    cgroup.mkdir(parents=True)
+    (cgroup / "cpu.max").write_text("max 100000\n")
+    assert probe.available_cpus() == unlimited
+    (cgroup / "cpu.max").write_text("200000 100000\n")  # same format as the B300 Pod's "3655000 100000"
+    assert probe.available_cpus() == min(2, unlimited)
+
+
+def test_cuda_architecture_resolution_and_toolkit_support():
+    from llm_surgeon.environment.detect import resolve_cuda_architectures, unsupported_cuda_architectures
+
+    b300 = [{"compute_capability": "10.3"}]
+    assert resolve_cuda_architectures("auto", b300) == "103" and resolve_cuda_architectures("100", b300) == "100"
+    assert resolve_cuda_architectures("auto", []) == "auto"
+    assert unsupported_cuda_architectures("103", {"sm_90", "sm_100"}) == ["103"]
+    assert unsupported_cuda_architectures("100;103", {"sm_100", "sm_103"}) == []
+    assert unsupported_cuda_architectures("100a", {"sm_90"}) == [], "only plain numeric architectures are checked"
+    assert unsupported_cuda_architectures("103", None) == [], "unknown toolkit list: no verdict"

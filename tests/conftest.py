@@ -83,6 +83,7 @@ class FakeProbe(HostProbe):
     ) -> None:
         super().__init__(allow_exec=False)
         self.gpu_name, self.compute_capability = gpu_name, compute_capability
+        self.gpu_codes = {"sm_80", "sm_90", "sm_100", "sm_103", "sm_120"}  # nvcc 13.2 on the B300 Pod listed these and more
         self.lambda_stack = lambda_stack
         self.tools = tools if tools is not None else {"git", "cmake", "g++", "make", "nvidia-smi", "nvcc"}
         self._gpus = gpus
@@ -126,6 +127,15 @@ class FakeProbe(HostProbe):
 
     def nvcc_version(self) -> str | None:
         return "12.9" if "nvcc" in self.tools else None
+
+    def nvcc_path(self) -> str | None:
+        return self.which("nvcc")
+
+    def nvcc_gpu_codes(self) -> set[str] | None:
+        return set(self.gpu_codes) if "nvcc" in self.tools else None
+
+    def available_cpus(self) -> int:
+        return 32
 
     def dpkg_packages(self, prefixes):
         return ["lambda-stack-cuda"] if self.lambda_stack else []

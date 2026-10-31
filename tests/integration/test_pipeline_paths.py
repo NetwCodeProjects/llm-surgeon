@@ -375,3 +375,22 @@ def test_fp8_loader_test_on_a100_is_not_representative(env, monkeypatch, fails):
     assert comparison["outcome"] == ("failed" if fails else "passed")
     preflight = json.loads((run / "metrics" / "preflight.json").read_text())
     assert [f["rule"] for f in preflight["capabilities"]] == ["fp8_vllm_weight_only"]
+
+
+@pytest.mark.parametrize("toolkit_has_sm_103", [True, False])
+def test_b300_preflight_checks_the_toolkit_can_build_llama_cpp_for_sm_103(env, toolkit_has_sm_103):
+    env.probe.gpu_name, env.probe.compute_capability = "NVIDIA B300 SXM6 AC", "10.3"
+    if not toolkit_has_sm_103:
+        env.probe.gpu_codes = {"sm_80", "sm_90", "sm_100", "sm_120"}
+    env.provision()
+    code, out = env.run("--only", "0")
+    preflight = json.loads(next(env.workspace.glob("runs/*/metrics/preflight.json")).read_text())
+    if toolkit_has_sm_103:
+        assert code == 0, out
+        assert "sm_103" in preflight["nvcc_gpu_codes"] and preflight["nvcc_path"] == "/usr/bin/nvcc" and preflight["available_cpus"] == 32
+        assert not [f for f in preflight["capabilities"] if f["category"] == "unsupported_configuration"]
+    else:
+        assert code == ExitCode.PREFLIGHT
+        receipt = env.receipt(env.latest_run(), "00")
+        assert receipt["error"]["error_id"] == "E_CAPABILITY_UNSUPPORTED" and "sm_103" in receipt["error"]["message"]
+        assert [f["rule"] for f in preflight["capabilities"] if f["category"] == "unsupported_configuration"] == ["gguf_cuda_arch"]

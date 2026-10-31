@@ -82,6 +82,43 @@ class HostProbe:
     def which(self, name: str) -> str | None:
         return shutil.which(name)
 
+    def nvcc_path(self) -> str | None:
+        """nvcc on PATH, else the standard toolkit location.
+
+        NVIDIA CUDA images (e.g. Runpod's runpod/pytorch, seen on a B300 Pod 2026-10-31) install the
+        toolkit in /usr/local/cuda without putting it on the PATH of non-login shells, so a PATH-only
+        lookup silently produced a CPU-only llama.cpp build plan.
+        """
+        found = self.which("nvcc")
+        if found:
+            return found
+        local = self.root / "usr" / "local"
+        versioned = sorted(
+            local.glob("cuda-*/bin/nvcc"), key=lambda p: [int(x) if x.isdigit() else 0 for x in re.split(r"[-.]", p.parts[-3])[1:]], reverse=True
+        )
+        for candidate in [local / "cuda" / "bin" / "nvcc", *versioned]:
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate)
+        return None
+
+    def nvcc_gpu_codes(self) -> set[str] | None:
+        """Real GPU architectures the toolkit can compile for (``nvcc --list-gpu-code``), e.g. {"sm_100", "sm_103"}."""
+        nvcc = self.nvcc_path()
+        out = self._run([nvcc, "--list-gpu-code"]) if nvcc else None
+        return {line.strip() for line in out.splitlines() if line.strip().startswith("sm_")} if out else None
+
+    def available_cpus(self) -> int:
+        """CPUs this process may use: the cgroup quota and the affinity mask, not the host's count.
+
+        A Runpod B300 Pod reported 344 host CPUs with a cgroup limit of ~36.5 (cpu.max 3655000 100000)."""
+        counts = [os.cpu_count() or 1]
+        if hasattr(os, "sched_getaffinity"):
+            counts.append(len(os.sched_getaffinity(0)))
+        quota = (self._read("/sys/fs/cgroup/cpu.max") or "").split()
+        if len(quota) == 2 and quota[0].isdigit() and quota[1].isdigit() and int(quota[1]) > 0:
+            counts.append(max(1, int(quota[0]) // int(quota[1])))
+        return max(1, min(counts))
+
     def gpus(self) -> list[dict[str, Any]] | None:
         out = self._run(
             [
@@ -120,7 +157,8 @@ class HostProbe:
         return None
 
     def nvcc_version(self) -> str | None:
-        out = self._run(["nvcc", "--version"])
+        nvcc = self.nvcc_path()
+        out = self._run([nvcc, "--version"]) if nvcc else None
         if out:
             match = re.search(r"release ([0-9.]+)", out)
             if match:
@@ -216,6 +254,28 @@ def detect_profile(probe: HostProbe, requested: str) -> tuple[str, str]:
         f"Cannot choose an environment profile automatically for {release.get('PRETTY_NAME', 'this OS')}",
         hint="Pass --lambda-stack or --ubuntu explicitly (both target Ubuntu hosts).",
     )
+
+
+NVCC_ARCH_HINT = (
+    "Use a newer CUDA toolkit (nvcc 13.2 lists sm_103 for the B300), or set quantization.gguf.cuda_architectures to an "
+    "architecture the toolkit lists: code for a lower minor version of the same major architecture runs by CUDA binary "
+    "compatibility (e.g. 100 on a compute capability 10.3 GPU), or set quantization.gguf.build_cuda: off for a CPU build."
+)
+
+
+def resolve_cuda_architectures(value: str, gpus: list[dict[str, Any]] | None) -> str:
+    """quantization.gguf.cuda_architectures: 'auto' becomes the GPUs' architectures ("103" on a B300)."""
+    if value != "auto":
+        return value
+    archs = sorted({a for a in (cuda_arch_from_capability(g.get("compute_capability")) for g in gpus or []) if a})
+    return ";".join(archs) if archs else "auto"
+
+
+def unsupported_cuda_architectures(architectures: str, gpu_codes: set[str] | None) -> list[str]:
+    """Plain numeric architectures (e.g. "103") the toolkit cannot compile real code for; [] when unknown."""
+    if not gpu_codes or architectures in ("auto", "", None):
+        return []
+    return [a for a in architectures.split(";") if a.isdigit() and f"sm_{a}" not in gpu_codes]
 
 
 def cuda_arch_from_capability(capability: str | None) -> str | None:

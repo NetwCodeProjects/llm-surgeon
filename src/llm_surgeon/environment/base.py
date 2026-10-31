@@ -74,7 +74,7 @@ class EnvironmentProfile:
     def assess(self, components: set[str], config: dict[str, Any]) -> HostAssessment:
         assessment = HostAssessment(self.name)
         for req in self.requirements(components):
-            if self.probe.which(req.command):
+            if self.probe.nvcc_path() if req.command == "nvcc" else self.probe.which(req.command):
                 continue
             (assessment.optional_missing if req.optional else assessment.missing).append(req)
         apt_packages = sorted({r.apt_package for r in assessment.missing if r.apt_package})
