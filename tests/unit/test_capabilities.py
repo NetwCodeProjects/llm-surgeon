@@ -37,8 +37,10 @@ def test_a100_fp8_loader_test_is_unverified_not_failed():
 
 
 def test_unexercised_hardware_is_reported_but_allowed():
-    findings = assess(cfg(), [B300], needs_gpu=True, heretic=True, source_size=None)
-    assert rules(findings) == ["hardware_not_exercised"] and "10.3" in findings[0]["message"]
+    b200 = {"name": "NVIDIA B200", "compute_capability": "10.0", "memory_total_mib": 183359}
+    findings = assess(cfg(), [b200], needs_gpu=True, heretic=True, source_size=None)
+    assert rules(findings) == ["hardware_not_exercised"] and "10.0" in findings[0]["message"]
+    assert assess(cfg(), [B300], needs_gpu=True, heretic=True, source_size=None) == [], "10.3 was exercised on 2026-10-31"
 
 
 def test_fp8_on_pre_ampere_is_unsupported_unless_the_test_is_off():

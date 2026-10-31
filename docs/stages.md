@@ -60,7 +60,7 @@ written to `metrics/preflight.json` and shown as warnings.
 |---|---|---|
 | `unsupported_configuration` | stops before any work (`E_CAPABILITY_UNSUPPORTED`, exit 4) | `fp8_vllm_compute`: FP8 loader test requested on a GPU below compute capability 8.0. vLLM documents no FP8 path there. `gguf_cuda_arch`: the host CUDA toolkit (`nvcc --list-gpu-code`) cannot compile llama.cpp for the GPUs' architecture (e.g. `sm_103` for a B300 needs a toolkit that lists it; nvcc 13.2 does). |
 | `estimated_resource_shortage` | warning | `vram_vs_checkpoint` (Heretic needs the BF16 model on the GPU), `disk_estimate` |
-| `unverified_execution` | warning | `fp8_vllm_weight_only`: compute capability 8.0–8.8 (e.g. A100) has no native FP8, so vLLM runs a weight-only fallback. `hardware_not_exercised`: no recorded real run on this compute capability (e.g. B200 10.0, B300 10.3). |
+| `unverified_execution` | warning | `fp8_vllm_weight_only`: compute capability 8.0–8.8 (e.g. A100) has no native FP8, so vLLM runs a weight-only fallback. `hardware_not_exercised`: no recorded real run on this compute capability (exercised so far: A100 8.0, B300 10.3; e.g. B200 10.0 is not). |
 
 Compute capability is used only where a backend documents it as the requirement. It is never a general
 compatibility verdict.

@@ -304,3 +304,42 @@ GitHub redirects the old URL). Distribution `llm-surgeon`, import package `llm_s
 log were updated to the new package directory. Stored data is unaffected: receipts, manifests and
 assessment records never contain the package name. `uv.lock` and `requirements/*.txt` were regenerated;
 only the project entry changed.
+
+## 2026-10-31 — First run on a B300 (Runpod)
+
+Host: Runpod Secure Cloud Pod, 1× NVIDIA B300 SXM6 AC (compute capability 10.3, 275 GB), driver 595.91.07,
+image `runpod/pytorch:1.5.0-cu1320-torch2130-ubuntu2404` (nvcc 13.2 in `/usr/local/cuda`, not on PATH),
+container limited to ~36.5 CPUs (`cpu.max` 3655000/100000) and ~503 GB RAM on a 344-CPU host, workspace on the
+500 GB container disk. Code at `691bebd` (setup) and the same commit for the run.
+
+Setup (`--setup-only`, run `20261031T211616Z-9fe6ec`, 285 s): all four components installed and validated.
+llama.cpp `d854d98` built with CUDA for `-DCMAKE_CUDA_ARCHITECTURES=103` (PATH exported by hand). The torch
+wheels (2.14.0+cu132, 2.14.1+cu132, 2.13.0 for vLLM) list `sm_75 … sm_100, sm_120` but not `sm_103`; their GPU
+smoke tests passed on the 10.3 device (code for 10.0 runs on 10.3 by CUDA binary compatibility).
+
+Validation run (`20261031T213438Z-60805f`, Qwen/Qwen3.5-2B `15852e8c`, optimize, 12 trials, seed 1234,
+profile `qwen3_5`, formats fp8/q8_0/iq4_xs): **succeeded, 949 s**. Per stage: 05 abliterate 366 s (GPU peak
+76 %, 9.2 GB), 06 qualify 41 s (benign 1.0, held-out refusals 0/20, integrity ok), 08 quantize 101 s (GPU
+idle), 09 verify 409 s, of which vLLM start-up was 279 s (FlashInfer JIT-compiles kernels for `sm_103a`, then
+CUDA-graph capture; the first graph took 56 s). Selected trial 6 by policy (Pareto position 3).
+
+- **First representative FP8 loader test:** native FP8 (`native_fp8: true`, `representative: true`),
+  passed. The A100 could only run the weight-only fallback.
+- **First real run of the Step 5 comparison:** baseline master 8/8 benign, 0/4 held-out refused, 0/12 integrity
+  issues; FP8 (vLLM, rendered prompts via `LLM.generate`) 8/8 (+0); Q8_0 (llama.cpp) 8/8 (+0); IQ4_XS 7/8 (−1).
+  All passed the default export gates. This is the first real evidence for the vLLM comparison path.
+
+Findings:
+
+30. **`nvcc` off PATH** (fixed in `be53e95`): NVIDIA CUDA images install the toolkit in `/usr/local/cuda`
+    without putting it on the PATH of non-login SSH shells, so a PATH-only lookup plans a CPU-only llama.cpp
+    build. `HostProbe.nvcc_path()` now also checks the standard locations; preflight checks `sm_XYZ` support.
+31. **Host CPU count ≠ usable CPUs** (fixed in `be53e95`): `os.cpu_count()` returned 344; the build ran with
+    `-j 343` in a ~36-CPU cgroup. Build jobs now follow the cgroup quota and affinity.
+32. **The B300 leaves most resources idle on a 2B model**: Heretic peaked at 76 % GPU and 9 GB VRAM; stage 08
+    and the hashing in 07/09 are single-threaded CPU work. Profiling with the 27B model comes next.
+33. **The master is missing 15 `mtp.*` tensors** (as on the A100): `selection.graft_missing_source_tensors`
+    is not set by the `qwen3_5` profile, so the report records the gap.
+
+Real-tool coverage added: Step 5 (vLLM and llama.cpp comparisons), the `sm_103` llama.cpp build and native
+FP8 verification, all on real hardware. The capability policy now lists 10.3 as exercised.

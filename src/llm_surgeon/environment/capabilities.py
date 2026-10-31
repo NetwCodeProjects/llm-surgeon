@@ -28,6 +28,7 @@ VLLM_FP8_BASIS = (
 # Compute capabilities on which this platform has a recorded real run, and what was covered.
 EXERCISED = {
     "8.0": "A100 (2026-10-29): Heretic ARA, qualification, GGUF CUDA build; FP8 loader test not representative",
+    "10.3": "B300 (2026-10-31, Runpod): Qwen3.5-2B full run; llama.cpp CUDA build for sm_103 (nvcc 13.2); native FP8 vLLM loader test",
 }
 
 
