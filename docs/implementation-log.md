@@ -343,3 +343,15 @@ Findings:
 
 Real-tool coverage added: Step 5 (vLLM and llama.cpp comparisons), the `sm_103` llama.cpp build and native
 FP8 verification, all on real hardware. The capability policy now lists 10.3 as exercised.
+
+Measurements taken on the same Pod after the run (raw logs: `../b300-evidence/`, outside the repository):
+
+| Measurement | Result | Implication for the 27B |
+|---|---|---|
+| sha256, one core (4.43 GB shard) | 1.26 GB/s first read, 1.23 GB/s cached | ~45 s per full hash of 55.6 GB |
+| sha256, 8 threads on 8 files | 9.54 GB/s aggregate (7.7×) | ~6 s per full hash |
+| vLLM 0.32.0 start-up, FP8 2B, cold (stage 09) | `load_seconds` 279.1 | — |
+| same, warm (second start on the Pod) | `load_seconds` 63.9, no JIT compile lines | ~215 s was one-time FlashInfer compilation for `sm_103a`; the cache lives in the home directory and is lost with the container disk |
+
+A manual vLLM start without the tool venv's `bin/` on PATH failed (`No such file or directory: 'ninja'`): the
+JIT needs the activation the pipeline already applies (Step 6).
