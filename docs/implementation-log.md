@@ -414,3 +414,60 @@ budget stop, no interruption, wrong model for `--expect-model Qwen/Qwen3.8-27B`,
 Not verified on a GPU: `llama-server` with CUDA, parallel stage 08 with the real tools, the start-up time
 with `enforce_eager` and with a warm workspace cache, the batch-size effect on the 27B. The acceptance run
 covers all four.
+
+## 2026-11-01 — Release path: publishing, release record, local acceptance
+
+Decided with the owner: the GPU runs once, and that run is the release. Everything provable without the GPU
+is proven first by a local acceptance run with real tools on a small model of the same architecture.
+Published: the BF16 master, FP8 and GGUF Q4_K_M, to private repositories the owner makes public.
+
+- `--publish RUN_ID --hf-namespace NAME` (`llm_surgeon/publish.py`, `model_card.py`, runtime
+  `scripts/runtime/hf_publish.py` in the heretic environment, which has `huggingface_hub` 1.33.0; its
+  `upload_large_folder`, `list_repo_tree(expand=True)`, `create_repo` and `model_info` signatures were read
+  there). Plan and token first; the upload needs the token, `--yes` and `$HF_TOKEN`. The source model's
+  `README.md` is replaced by the generated card. The uploaded copy of the release record leaves out the
+  workspace's directory sizes: they change once the record is written, which changed the token between the
+  plan and the confirmation (found by the tests).
+- Release record (`release_record.py`, moved from `scripts/acceptance_record.py`, which is now a wrapper):
+  `--kind release` requires a complete run, `promoted:qualified`, every export loaded natively, every
+  comparison passed and a clean commit. `--publish` computes it and refuses anything but `ready`.
+- `configs/pipeline.yaml` is the release config (`fp8`, `q4_k_m`, `allow_partial_exports: false`). The tests
+  pin their own three formats and partial exports, so mechanics tests no longer depend on release choices.
+- Stage 09's image test runs on the export's `llama-server` (`--mmproj`, `/v1/chat/completions`). Real check
+  (CPU, WSL, `d854d98`, Qwen3.5-0.8B BF16 + F16 mmproj): `/props` reports vision; a red square → "red" in
+  0.4 s with `enable_thinking: false`; with thinking on, all 16 tokens went to reasoning; `/completion` keeps
+  working on the same server. If the server cannot start with the projector, the text tests run on a server
+  without it and only the image test fails. `llama-completion` and `llama-mtmd-cli` are no longer built.
+- Lambda Stack: the profile differs from ubuntu only in reusing host-installed tools instead of installing
+  them; both go through the same probes (driver, nvcc, build tools), which the unit tests cover. No separate
+  Lambda Stack image test (owner's decision).
+
+Local acceptance at `3f2c2a8` (WSL2 on an i7-7820X with 8 CPUs given to WSL, CPU only; Qwen/Qwen3.5-0.8B
+`2fc06364`; `configs/acceptance/local-cpu.yaml`):
+
+| Step | Result |
+|---|---|
+| clean setup | heretic, fp8, llama_cpp installed in 310 s |
+| reuse | all reused in 26 s |
+| search | 24/25 refusals at baseline; ~4 min per trial; the 45-minute budget stopped it after 10 trials; trial 3 (3/25 refusals, KL 0.094) eligible and selected; export-only kept the 10 trials |
+| qualification | 8/10 benign correct, 0/20 held-out refused, integrity passed; `promoted:qualified` |
+| interrupt | SIGINT during stage 08: `interrupted`, exit 130; `--resume` reused 00–07 and finished 08 (260 s) |
+| verification | Q4_K_M in `llama-server` with the projector: text, image ("red"), 25 s load; comparison 7/8 benign (master 6/8), held-out 1/4 (master 0/4), passed |
+| record | 9/10 passed; `comparison` failed on the FP8 export whose runtime is off on a CPU (finding 41) |
+
+Real publish (owner's account, private): a fork of that run with `--quantizations q4_k_m` published
+`brokenmagic/llm-surgeon-acceptance-test` (13 files) and `-GGUF` (6 files); every file matched remotely (5
+large files by sha256, the rest by git blob id), both private, two `publication` records written.
+
+Findings:
+
+41. **The acceptance record failed a comparison it could not have measured:** the FP8 export's runtime is
+    switched off on a CPU, so its comparison is `unmeasured`. The loading check already listed such an export
+    instead of failing it; the comparison check now does the same, in the acceptance record only.
+42. **A fork verified and would have published its parent's exports.** A fork imports the parent's artifact
+    index; with `--quantizations q4_k_m` its stage 09 still verified the parent's FP8 export, and the release
+    record failed on it. Stage 09 and `--publish` now consider only the exports the run's own formats produce.
+43. **WSL stops the distribution when its last `wsl.exe` session ends**, which killed a `nohup` background
+    run. Long local runs need a session that stays open for the whole run.
+44. The stage 05 message about the missing `mtp.*` tensors pointed at a setting the profile already sets; it is
+    an info line saying stage 07 restores them whenever the graft is configured.

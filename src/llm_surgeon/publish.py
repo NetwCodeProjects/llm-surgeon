@@ -204,7 +204,7 @@ def plan_token(plan: dict[str, Any]) -> str:
     return sha256_obj({"run": plan["run_id"], "repos": [[r["repo_id"], [[f["path"], f["sha256"]] for f in r["files"]]] for r in plan["repos"]]})[:16]
 
 
-def print_plan(plan: dict[str, Any], token: str, namespace: str, name: str | None, stream) -> None:
+def print_plan(plan: dict[str, Any], token: str, namespace: str, name: str | None, workspace: Path, stream) -> None:
     stream.write(f"Publish plan for run {plan['run_id']} (nothing uploaded). Every repository is created PRIVATE.\n")
     for repo in plan["repos"]:
         total = sum(f["size_bytes"] for f in repo["files"])
@@ -212,7 +212,10 @@ def print_plan(plan: dict[str, Any], token: str, namespace: str, name: str | Non
         for f in repo["files"]:
             stream.write(f"    {f['path']:<60} {model_card.human(f['size_bytes']):>10}\n")
     flag = f" --repo-name {name}" if name else ""
-    stream.write(f"\nTo upload exactly this plan: ./main.sh --publish {plan['run_id']} --hf-namespace {namespace}{flag} --confirm-publish {token} --yes\n")
+    stream.write(
+        f"\nTo upload exactly this plan (with $HF_TOKEN set): ./main.sh --output-dir {workspace} --publish {plan['run_id']} "
+        f"--hf-namespace {namespace}{flag} --confirm-publish {token} --yes\n"
+    )
 
 
 def stage(workspace: Path, plan: dict[str, Any], generated: dict[str, dict[str, bytes]]) -> dict[str, Path]:
@@ -264,7 +267,7 @@ def publish(workspace: Path, run_id: str, namespace: str, name: str | None, conf
     plan, generated = build_plan(workspace, run_id, namespace, name)
     token = plan_token(plan)
     if confirm is None:
-        print_plan(plan, token, namespace, name, stream)
+        print_plan(plan, token, namespace, name, workspace, stream)
         return int(ExitCode.OK)
     if confirm != token:
         raise PipelineError(
