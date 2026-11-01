@@ -471,3 +471,28 @@ Findings:
     run. Long local runs need a session that stays open for the whole run.
 44. The stage 05 message about the missing `mtp.*` tensors pointed at a setting the profile already sets; it is
     an info line saying stage 07 restores them whenever the graft is configured.
+
+## 2026-11-01 — Acceptance closed for `0956ee2`
+
+Second local acceptance run, on `0956ee2` (records and logs: `../acceptance-evidence/`):
+
+| Step | Result |
+|---|---|
+| clean setup, reuse | passed (438 s, 20 s) |
+| search | 45-minute budget stopped it after 9 trials; no trial within the gates (closest KL 0.3423) → `E_NO_ELIGIBLE_TRIAL` |
+| continue | `--resume <run> --max-runtime-minutes 90` continued the same study ("Searching (continue)", the 9 trials kept), first time with the real engine; 90-minute budget stop at 39 trials; still none eligible: trial 28 refusal 1/25, KL 0.1004; trial 19 refusal 0/25, KL 0.1011 (gate 0.1) |
+| record | not accepted: stage 05 failed, so promotion, exports and comparison are unresolved |
+
+45. **On the CPU-scaled search, whether a trial lands under the KL gate is chance.** The 0.1 gate is calibrated
+    for Heretic's full evaluation (100 prompts, 100-token answers); `acceptance-cpu.toml` uses 25 prompts and
+    48 tokens, so KL estimates are noisier. Run 1 found an eligible trial at trial 3, run 2 none in 39 (two
+    within 0.0011 of the gate). The pipeline behaved as specified in both: it refused to promote without an
+    eligible trial, and the documented remedy (continue with a larger budget) ran for real.
+
+Decision (owner, 2026-11-01): `0956ee2` is accepted on the evidence. The first run (`3f2c2a8`), re-scored with
+the corrected record (finding 41), passes all 10 checks; `0956ee2` differs from it only by findings 41, 42 and
+44, each covered by tests (557 passing); the second run proved setup, reuse, the budget stop and continuing a
+stopped study on that commit. No further local run before the release.
+
+For the release run this means: if the 27B search finds no eligible trial within 180 minutes, nothing is
+promoted or published; `--resume <run> --max-runtime-minutes <larger>` continues the same study, as above.

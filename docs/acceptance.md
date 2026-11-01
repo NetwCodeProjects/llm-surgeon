@@ -62,4 +62,6 @@ The record goes to `$WS/runs/<run>/reports/acceptance-record.{json,md}`. Recorde
   expected: lower `abliteration.max_runtime_minutes` and repeat step 3.
 - No eligible trial within the budget (`E_NO_ELIGIBLE_TRIAL`, raised when stage 05 selects a trial) on this
   scaled-down search: resume with a larger budget (`--resume <run> --max-runtime-minutes 90`; the budget is
-  operational, so no fork is needed).
+  operational, so no fork is needed). Expect it now and then: the KL gate (0.1) is calibrated for the full
+  evaluation, and the CPU template's 25 prompts make KL noisy. Of the first two runs, one found an eligible
+  trial at trial 3, the other none in 39 (closest 0.1004); see the implementation log, 2026-11-01.
