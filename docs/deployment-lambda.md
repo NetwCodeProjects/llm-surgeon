@@ -40,8 +40,9 @@ master hardlinked, FP8 ~30 GB, GGUF BF16 intermediate ~55 GB, IQ4_XS ~15 GB, IQ3
 
 - `export HF_TOKEN=…` (or another variable named by `model.hf_token_env`). The value is passed to child
   processes in their environment only, never written to configs/receipts, and redacted from all logs.
-- Nothing is uploaded: Heretic's `upload` action is never selected and reproduce files are patched to
-  clear upload settings.
+- No stage uploads anything: Heretic's `upload` action is never selected and reproduce files are patched
+  to clear upload settings. Publishing is a separate, explicit command ([release](release.md)); it creates
+  private repositories only.
 
 ## Commands
 

@@ -65,7 +65,8 @@ against `schemas/artifact.schema.json` (JSON Schema 2020-12) before it is writte
 
 `workspace/assessments/<artifact_id>/<assessment_id>.json` (append-only, never rewritten) and a run copy
 under `runs/<run>/assessments/`. Validated against `schemas/assessment.schema.json` (1.0). Kinds:
-`promotion` (stage 07), `verification` and `comparison` (stage 09). Fields, derivation and redaction:
+`promotion` (stage 07), `verification` and `comparison` (stage 09), `publication` (`--publish`, added
+2026-11-01; additive, it derives no status part). Fields, derivation and redaction:
 [assessments](assessments.md).
 
 ## Schema history and migration

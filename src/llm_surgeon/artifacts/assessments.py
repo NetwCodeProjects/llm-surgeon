@@ -20,7 +20,7 @@ from ..telemetry import utc_now
 from .schema_lite import load_schema, validate
 
 SCHEMA_VERSION = "1.0"
-KINDS = ("promotion", "verification", "comparison")
+KINDS = ("promotion", "verification", "comparison", "publication")
 # derived_status part -> manifest fields it covers
 PARTS = ("validation", "inference", "evaluation")
 REDACTED = "unavailable (redacted)"

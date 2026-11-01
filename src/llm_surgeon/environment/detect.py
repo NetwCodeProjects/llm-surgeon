@@ -285,7 +285,7 @@ def unsupported_cuda_architectures(architectures: str, gpu_codes: set[str] | Non
 
 
 def cuda_arch_from_capability(capability: str | None) -> str | None:
-    """'10.0' -> '100' (B200), '9.0' -> '90' (H100)."""
+    """'10.0' -> '100' (B200), '10.3' -> '103' (B300), '9.0' -> '90' (H100)."""
     if not capability:
         return None
     match = re.match(r"^(\d+)\.(\d+)$", capability.strip())

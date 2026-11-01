@@ -1,0 +1,65 @@
+# Local acceptance run on a CPU (docs/acceptance.md): every step of the release run, with real tools, on
+# Qwen/Qwen3.5-0.8B (the same Qwen3_5ForConditionalGeneration architecture as the 27B, with a vision tower).
+# Proves clean setup, tool reuse, a budget stop followed by export-only, an interrupted and resumed stage,
+# promotion through the real gates, FP8 and GGUF exports, the GGUF loader and image tests, and the master/export
+# comparison, before the one GPU run. Not provable on a CPU: native FP8 loading in vLLM (verify_backend none
+# here; verified on the B300 on 2026-10-31 and again by the release run before it may publish).
+#
+# COMPATIBILITY NOTICE: see configs/pipeline.yaml.
+schema_version: '1.0'
+profiles:
+  - ../quantization/default.yaml
+  - ../profiles/qwen3_5.yaml         # includes the mtp.* graft
+
+model:
+  url: Qwen/Qwen3.5-0.8B
+  revision: 2fc06364715b967f1860aea9cf38778875588b17   # verified 2026-11-01 (apache-2.0)
+  trust_remote_code: false
+  hf_token_env: HF_TOKEN
+
+environment:
+  profile: auto
+  install_missing: true
+  torch_backend: cpu                 # no supported GPU on the development host
+  min_free_disk_gb: 20
+  disk_buffer_gb: 10
+
+abliteration:
+  enabled: true
+  experiment: optimize
+  heretic_config: configs/heretic/acceptance-cpu.toml
+  max_trials: 200                    # deliberately unreachable within the budget below
+  n_startup_trials: 4
+  max_runtime_minutes: 45            # the budget stop is part of the acceptance run
+
+evaluation:
+  baseline_mode: published_only
+  published_baselines: null
+  qualification: fast
+  enable_thinking: false
+  comparison:
+    enabled: true
+
+selection:
+  profile: qualified
+  export_gates:
+    mode: report
+
+quantization:
+  enabled: true
+  input: selected_master
+  formats: [fp8, q4_k_m]             # the release formats
+  parallel: true
+  fp8:
+    device: cpu
+    verify_backend: none             # vLLM needs a GPU with native FP8 (see the header)
+  gguf:
+    build_cuda: 'off'
+
+execution:
+  resume: true
+  stop_on_failure: true
+  allow_partial_exports: false       # an acceptance run must produce every export
+
+logging:
+  console_level: info

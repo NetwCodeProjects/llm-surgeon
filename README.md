@@ -36,9 +36,9 @@ llm-compressor `0.14.0.1`, vLLM `0.32.0`.
 
 Every stage has run end to end with Qwen3.5-2B on a B300 (Runpod, 2026-10-31), including native FP8 in
 vLLM and a CUDA `sm_103` llama.cpp build; an earlier A100 run (Lambda, 2026-10-29) found the environment
-issues fixed since. Version 1.0.0 is
-tagged once the bounded Qwen3.8-27B acceptance run ([docs/acceptance.md](docs/acceptance.md)) produces an
-`accepted` record; until then nothing is claimed for the 27B model. What is and is not verified is listed
+issues fixed since. Each commit is accepted locally first: a real run of Qwen3.5-0.8B on a CPU
+([docs/acceptance.md](docs/acceptance.md)). The release is one Qwen3.8-27B run on a B300, published only if
+its release record says `ready` ([docs/release.md](docs/release.md)). What is and is not verified is listed
 in [docs/limitations.md](docs/limitations.md).
 
 ## Requirements
@@ -68,7 +68,7 @@ git clone https://github.com/NetwCodeProjects/llm-surgeon.git && cd llm-surgeon
 export HF_TOKEN=...                       # optional for public repos; never written to disk by the platform
 ./main.sh --lambda-stack --dry-run
 ./main.sh --lambda-stack --setup-only --yes
-./main.sh --lambda-stack --yes            # Qwen/Qwen3.8-27B, optimize 50 trials / 180 min, fp8 + iq4_xs + iq3_s
+./main.sh --lambda-stack --yes            # Qwen/Qwen3.8-27B, optimize 50 trials / 180 min, fp8 + q4_k_m
 ```
 
 The ARA reference (`coder3101/Qwen3.8-27B-heretic-ara`) can only be reproduced **approximately**; see
@@ -84,8 +84,18 @@ aws s3 cp --recursive $WS/exports s3://<bucket>/exports   # copy results out bef
 ```
 
 The `runpod/pytorch` CUDA 13.2 image works: its nvcc (in `/usr/local/cuda`, off the SSH PATH; the
-pipeline finds it) can target the B300's `sm_103`. The acceptance procedure is in
-[docs/acceptance.md](docs/acceptance.md).
+pipeline finds it) can target the B300's `sm_103`. The release procedure is in [docs/release.md](docs/release.md).
+
+### Publish to Hugging Face
+
+```bash
+./main.sh --publish RUN_ID --hf-namespace <you>                     # the plan: three private repositories, nothing uploaded
+HF_TOKEN=... ./main.sh --publish RUN_ID --hf-namespace <you> --confirm-publish <token> --yes
+```
+
+Only a run whose release record is `ready` is uploaded (BF16 master, FP8, GGUF with the vision projector),
+each repository private, with a generated model card and every file checked remotely. Making them public
+is your decision on Hugging Face ([docs/release.md](docs/release.md)).
 
 ### Plain Ubuntu
 
@@ -135,7 +145,7 @@ actually tested), gates, metric provenance, tool versions and measured time.
 [configuration](docs/configuration.md) · [Lambda](docs/deployment-lambda.md) · [Ubuntu](docs/deployment-ubuntu.md) ·
 [Heretic adapter](docs/heretic-adapter.md) · [study lifecycle](docs/study-lifecycle.md) · [quantization](docs/quantization.md) · [evaluation](docs/evaluation.md) · [assessments](docs/assessments.md) ·
 [artifact schema](docs/artifact-schema.md) · [security](docs/security-and-trust.md) · [troubleshooting](docs/troubleshooting.md) ·
-[limitations](docs/limitations.md) · [acceptance](docs/acceptance.md) · [implementation log](docs/implementation-log.md) · [original specification](docs/PROJECT_A_AGENT_HANDOFF.md)
+[limitations](docs/limitations.md) · [acceptance](docs/acceptance.md) · [release](docs/release.md) · [implementation log](docs/implementation-log.md) · [original specification](docs/PROJECT_A_AGENT_HANDOFF.md)
 
 ## Development
 
@@ -144,8 +154,9 @@ uv sync --frozen            # or ./main.sh --bootstrap --yes, then .venv/bin/pip
 .venv/bin/python -m pytest  # CPU-only unit + mocked integration tests
 python scripts/generate_schema.py --check
 REALTOOLS_WS=/tmp/ws python tests/realtools/provision_cpu.py && REALTOOLS_WS=/tmp/ws pytest -m realtools tests/realtools
-pytest -m gpu tests/gpu     # on a B200; other GPUs need GPU_ALLOW_OTHER=1
+pytest -m gpu tests/gpu     # on the B200/B300 release host; other GPUs need GPU_ALLOW_OTHER=1
 python3 scripts/acceptance_record.py --workspace WS --run RUN --setup-run A --reuse-run B   # docs/acceptance.md
+python3 scripts/acceptance_record.py --kind release --workspace WS --run RUN                 # docs/release.md
 ```
 
 Project B (coding-capability research) is intentionally **not** part of this repository.

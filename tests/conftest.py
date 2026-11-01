@@ -39,6 +39,7 @@ def make_tiny_model(path: Path, vision: bool = True) -> Path:
     (path / "tokenizer_config.json").write_text(json.dumps({"model_max_length": 262144}))
     (path / "chat_template.jinja").write_text("{% for m in messages %}{{ m['content'] }}{% endfor %}")
     (path / "generation_config.json").write_text(json.dumps({"do_sample": True}))
+    (path / "README.md").write_text("---\nlicense: apache-2.0\npipeline_tag: image-text-to-text\n---\n# tiny\n")
     if vision:
         (path / "preprocessor_config.json").write_text(json.dumps({"patch_size": 16}))
 
@@ -137,6 +138,9 @@ class FakeProbe(HostProbe):
     def available_cpus(self) -> int:
         return 32
 
+    def code_revision(self, repo: Path) -> dict[str, Any]:
+        return {"git_commit": "c0de" * 10, "git_dirty": False}
+
     def dpkg_packages(self, prefixes):
         return ["lambda-stack-cuda"] if self.lambda_stack else []
 
@@ -222,13 +226,11 @@ def fake_component_records(config, probe: HostProbe) -> dict[str, ComponentRecor
                 "convert": llama("convert"),
                 "llama-quantize": llama("quantize"),
                 "llama-imatrix": llama("imatrix"),
-                "llama-completion": llama("completion"),
-                "llama-mtmd-cli": llama("mtmd"),
                 "llama-server": llama("server"),
             },
             versions={"commit": configspec.LLAMA_CPP_PINNED_COMMIT, "gguf": "0.19.0"},
             build={"cuda": False},
-            validation=[{"argv": [*llama("completion"), "--version"], "returncodes": [0]}],
+            validation=[{"argv": [*llama("server"), "--version"], "returncodes": [0]}],
         ),
     }
 
@@ -282,6 +284,9 @@ class Env:
         data = yaml.safe_load((ROOT / "configs" / "pipeline.yaml").read_text(encoding="utf-8"))
         data["profiles"] = [str(ROOT / "configs" / p) for p in data.get("profiles", [])]
         data = deep_merge(data, {"environment": {"min_free_disk_gb": 0, "disk_buffer_gb": 0}})
+        # The mechanics tests use three formats (two GGUF types share an intermediate) and partial exports;
+        # configs/pipeline.yaml is the release config (fp8 + q4_k_m, no partial exports), tested on its own.
+        data = deep_merge(data, {"quantization": {"formats": ["fp8", "iq4_xs", "iq3_s"]}, "execution": {"allow_partial_exports": True}})
         data = deep_merge(data, changes)
         path = self.tmp / name
         path.write_text(yaml.safe_dump(data), encoding="utf-8")

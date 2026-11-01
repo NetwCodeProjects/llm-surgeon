@@ -17,7 +17,7 @@ quantization:
     vllm_enforce_eager: true         # no CUDA-graph capture for the dozen stage 09 prompts (contract gap recorded)
   gguf:
     llama_cpp_revision: null         # null = verified tag b11889
-    build_cuda: auto                 # CUDA build when nvcc is present (B200: sm_100)
+    build_cuda: auto                 # CUDA build when nvcc is present (B200: sm_100, B300: sm_103)
     cuda_architectures: auto
     intermediate_type: bf16
     imatrix_dataset: null            # e.g. a local calibration .txt; required for iq3_xxs/iq2_*/iq1_*

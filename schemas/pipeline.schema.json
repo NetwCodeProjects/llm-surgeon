@@ -868,7 +868,7 @@
             },
             "cuda_architectures": {
               "type": "string",
-              "description": "'auto' derives from nvidia-smi compute capability (B200 -> 100).",
+              "description": "'auto' derives from nvidia-smi compute capability (B200 -> 100, B300 -> 103).",
               "default": "auto"
             },
             "converter_transformers": {

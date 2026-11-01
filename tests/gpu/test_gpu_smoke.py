@@ -1,11 +1,12 @@
-"""GPU smoke tests for the B200 host. Never run in CI; select explicitly:
+"""GPU smoke tests for the release host (B200 or B300). Never run in CI; select explicitly:
 
     GPU_WS=$PWD/workspace pytest -m gpu tests/gpu -x -s
 
 They use the components provisioned by stage 01 (``./main.sh --setup-only --yes``) and the source
 snapshot from stage 02 (``./main.sh --through 2 --yes``). Each test is bounded; the Heretic test runs a
 *single small trial* and requires GPU_ALLOW_HERETIC_TRIAL=1 (explicit authorization of GPU time).
-Nothing here is claimed as passing until it has actually been run on the B200.
+Nothing here is claimed as passing until it has actually been run on that host. Other GPUs need
+GPU_ALLOW_OTHER=1.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from pathlib import Path
 import pytest
 
 pytestmark = pytest.mark.gpu
+RELEASE_GPUS = {"B200": (10, 0), "B300": (10, 3)}  # name fragment -> compute capability
 WS = Path(os.environ.get("GPU_WS", "workspace"))
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -41,11 +43,11 @@ def run(argv, timeout=1800, **kw):
     return subprocess.run([str(a) for a in argv], capture_output=True, text=True, timeout=timeout, **kw)
 
 
-def test_nvidia_smi_reports_b200():
+def test_nvidia_smi_reports_a_release_gpu():
     out = run(["nvidia-smi", "--query-gpu=name,memory.total,driver_version,compute_cap", "--format=csv,noheader"], timeout=60)
     assert out.returncode == 0, out.stderr
     print(out.stdout)
-    assert "B200" in out.stdout or os.environ.get("GPU_ALLOW_OTHER"), "set GPU_ALLOW_OTHER=1 to run on other GPUs"
+    assert any(name in out.stdout for name in RELEASE_GPUS) or os.environ.get("GPU_ALLOW_OTHER"), "set GPU_ALLOW_OTHER=1 to run on other GPUs"
 
 
 @pytest.mark.parametrize("name", ["heretic", "fp8", "vllm"])
@@ -57,7 +59,7 @@ def test_component_cuda_matmul(name):
     print(out.stdout[-2000:])
     payload = json.loads(out.stdout.strip().splitlines()[-1])
     assert payload["ok"], payload.get("error")
-    assert payload.get("capability") == [10, 0] or os.environ.get("GPU_ALLOW_OTHER")
+    assert tuple(payload.get("capability") or ()) in RELEASE_GPUS.values() or os.environ.get("GPU_ALLOW_OTHER")
 
 
 def test_source_model_loads_and_generates(tmp_path):

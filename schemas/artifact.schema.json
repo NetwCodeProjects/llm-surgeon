@@ -132,7 +132,7 @@
         "additionalProperties": false,
         "properties": {
           "assessment_id": {"type": "string", "pattern": "^asm-[0-9a-f]{24}$"},
-          "kind": {"enum": ["promotion", "verification", "comparison"]},
+          "kind": {"enum": ["promotion", "verification", "comparison", "publication"]},
           "run_id": {"type": "string"},
           "stage_id": {"type": "string"},
           "created_utc": {"type": "string"},

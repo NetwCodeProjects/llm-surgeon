@@ -8,7 +8,7 @@
 | Heretic adapter (install, introspection, native config, headless run, study export) | Real pinned Heretic (ARA): tiny model on CPU (WSL2); Qwen3.5-2B on an A100 (2026-10-29) and a B300 (2026-10-31), full 00–10 runs (implementation log) | **Qwen3.8-27B** (memory, runtime, ARA quality): the acceptance run (docs/acceptance.md) |
 | llama.cpp convert/quantize/verify | Real pinned build: CPU (WSL2), CUDA `sm_80` (A100), CUDA `sm_103` (B300); 2B GGUF exports q8_0/iq4_xs loaded on the B300; `llama-server` output byte-identical to `llama-completion -f` on a real Qwen3.5-0.8B GGUF (CPU) | `llama-server` on a GPU; 27B conversion time and size |
 | FP8 (llm-compressor + vLLM) | FP8_BLOCK of Qwen3.5-2B loaded natively by vLLM 0.32.0 on a B300 (representative test); weight-only fallback on the A100 | 27B; `vllm_enforce_eager` start-up time |
-| Lambda Stack profile | Unit tests with simulated dpkg/apt markers | A real Lambda Stack image |
+| Lambda Stack profile | It differs from the ubuntu profile only in reusing host-installed tools instead of installing them; both go through the same probes (driver, nvcc, build tools), covered by unit tests with simulated hosts | — (no separate image test, by decision) |
 
 No result for the 27B model is claimed until the acceptance record exists. `tests/gpu/` and
 docs/acceptance.md contain the commands to obtain it.

@@ -29,7 +29,7 @@ def test_each_gguf_export_loads_once_in_llama_server(env):
     verification = json.loads((run / "metrics" / "verification.json").read_text())
     gguf = verification["export:gguf:iq4_xs"]["smoke"]
     assert gguf["runtime"] == "llama-server" and gguf["passed"] and gguf["load_seconds"] is not None
-    assert gguf["modalities"] == ["text", "image"], "the image test still runs with llama-mtmd-cli"
+    assert gguf["modalities"] == ["text", "image"] and env.count("llama-server-image") == 2, "the image test runs on the same server"
 
 
 def test_a_gguf_server_that_cannot_load_fails_only_that_export(env, monkeypatch):
@@ -112,3 +112,15 @@ def test_an_interrupt_during_parallel_quantization_stops_the_stage_and_resumes(e
     code, out = env.run("--resume", run.name)
     assert code == 0, out
     assert json.loads(sub.read_text())["outcome"] == "succeeded"
+
+
+def test_a_projector_that_fails_to_load_fails_only_the_image_test(env, monkeypatch):
+    monkeypatch.setenv("FAKE_SERVER_MMPROJ_FAIL", "1")
+    env.provision()
+    code, out = env.run("--quantizations", "iq4_xs")
+    assert code == 0, out  # text verified; image not claimed
+    smoke = json.loads((env.latest_run() / "metrics" / "verification.json").read_text())["export:gguf:iq4_xs"]["smoke"]
+    assert smoke["passed"] and smoke["modalities"] == ["text"]
+    assert smoke["image_test"] == {"passed": False, "mentions_red": False, "error": "llama-server could not start with the projector"}
+    loaded = (env.counters / "llama-server.log").read_text().splitlines()
+    assert env.count("llama-server") == 2 and [line.rsplit("vision=", 1)[1] for line in loaded] == ["False"], "retried without the projector"

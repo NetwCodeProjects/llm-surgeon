@@ -144,7 +144,7 @@ first (`E_GATE_REQUIREMENT_MISSING`).
 | `quantization.gguf.llama_cpp_repo` | string | `"https://github.com/ggml-org/llama.cpp.git"` |  |  |
 | `quantization.gguf.llama_cpp_revision` | string\|null | `null` |  | null uses the verified pin b11889. |
 | `quantization.gguf.build_cuda` | string (auto\|on\|off) | `"auto"` |  |  |
-| `quantization.gguf.cuda_architectures` | string | `"auto"` |  | 'auto' derives from nvidia-smi compute capability (B200 -> 100). |
+| `quantization.gguf.cuda_architectures` | string | `"auto"` |  | 'auto' derives from nvidia-smi compute capability (B200 -> 100, B300 -> 103). |
 | `quantization.gguf.converter_transformers` | string\|null | `null` |  | transformers version for the converter venv; null keeps llama.cpp's own pin. Newer architectures may need an upgrade (e.g. configs/profiles/qwen3_5.yaml). |
 | `quantization.gguf.intermediate_type` | string (bf16\|f16\|f32) | `"bf16"` |  |  |
 | `quantization.gguf.imatrix_dataset` | string\|null | `null` |  | Calibration text: local file or hf://datasets/<repo>@<rev>/<file>. |

@@ -1,7 +1,8 @@
-"""Fake llama.cpp tools for CPU tests: fake_llama.py <convert|quantize|imatrix|completion|mtmd|server> ARGS (completion: --version only).
+"""Fake llama.cpp tools for CPU tests: fake_llama.py <convert|quantize|imatrix|server> ARGS.
 
 FAKE_QUANT_FAIL=<TYPE> makes llama-quantize fail for that type; FAKE_MMPROJ_FAIL=1 breaks --mmproj;
-FAKE_SERVER_FAIL=1 makes llama-server exit before the model loads; FAKE_SERVER_BIND_FAIL_ONCE=<marker path>
+FAKE_SERVER_FAIL=1 makes llama-server exit before the model loads; FAKE_SERVER_MMPROJ_FAIL=1 makes it exit when
+started with --mmproj; FAKE_SERVER_BIND_FAIL_ONCE=<marker path>
 makes its first start fail to bind the port.
 """
 
@@ -22,18 +23,22 @@ def arg(flag: str) -> str:
     return sys.argv[sys.argv.index(flag) + 1]
 
 
-def serve(model: str, port: int, threads: str) -> int:
+def serve(model: str, port: int, threads: str, vision: bool) -> int:
     """llama-server at d854d98 as stage 09 uses it (tools/server/README.md): GET /health, POST /completion
-    with a string prompt, returning content, stop_type, tokens_evaluated and tokens_predicted."""
+    with a string prompt (content, stop_type, tokens_evaluated, tokens_predicted) and, with --mmproj,
+    POST /v1/chat/completions with an image (OpenAI-style choices[0].message.content)."""
     if os.environ.get("FAKE_SERVER_FAIL"):
         print("main: error: failed to load model (fake failure)", file=sys.stderr)
+        return 1
+    if vision and os.environ.get("FAKE_SERVER_MMPROJ_FAIL"):
+        print("clip_init: failed to load the multimodal projector (fake failure)", file=sys.stderr)
         return 1
     marker = os.environ.get("FAKE_SERVER_BIND_FAIL_ONCE")  # a path: the first start loses its port race
     if marker and not Path(marker).exists():
         Path(marker).write_text("1")
         print(f"srv    start: couldn't bind HTTP server socket, hostname: 127.0.0.1, port: {port}", file=sys.stderr)
         return 1
-    log("llama-server", f"start model={Path(model).name} threads={threads}")
+    log("llama-server", f"start model={Path(model).name} threads={threads} vision={vision}")
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):  # keep stderr quiet like the real server at default verbosity
@@ -51,9 +56,14 @@ def serve(model: str, port: int, threads: str) -> int:
             self.reply(200, {"status": "ok"}) if self.path == "/health" else self.reply(404, {})
 
         def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            if self.path == "/v1/chat/completions" and vision:
+                image = body["messages"][0]["content"][0]["image_url"]["url"]
+                assert image.startswith("data:image/png;base64,") and body["chat_template_kwargs"] == {"enable_thinking": False}
+                count("llama-server-image")
+                return self.reply(200, {"choices": [{"message": {"role": "assistant", "content": "Red."}, "finish_reason": "stop"}]})
             if self.path != "/completion":
                 return self.reply(404, {})
-            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             assert body["temperature"] == 0 and body["cache_prompt"] is False, "greedy, no prompt cache"
             prompt = body["prompt"]
             count("llama-server-request")
@@ -128,11 +138,8 @@ def main() -> int:
     if tool == "imatrix":
         shutil.copyfile(arg("-f"), arg("-o"))
         return 0
-    if tool == "mtmd":
-        print("Red.")
-        return 0
     if tool == "server":
-        return serve(arg("-m"), int(arg("--port")), arg("-t"))
+        return serve(arg("-m"), int(arg("--port")), arg("-t"), "--mmproj" in rest)
     print(f"unknown fake tool {tool}", file=sys.stderr)
     return 2
 

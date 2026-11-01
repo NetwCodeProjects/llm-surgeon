@@ -32,7 +32,7 @@ from .detect import NVCC_ARCH_HINT, HostProbe, resolve_cuda_architectures, unsup
 
 COMPONENTS_FILE = "components.json"
 TORCH_FAMILY_RE = re.compile(r"^(torch|torchvision|torchaudio|triton|pytorch-triton|nvidia-[a-z0-9-]+)\s*(==|>=|<=|~=|@)", re.I)
-LLAMA_TARGETS = ["llama-quantize", "llama-imatrix", "llama-completion", "llama-mtmd-cli", "llama-server"]
+LLAMA_TARGETS = ["llama-quantize", "llama-imatrix", "llama-server"]
 
 
 @dataclass
@@ -445,7 +445,6 @@ class ComponentManager:
             versions={"commit": commit, **self._python_versions(conv_python, ["gguf", "transformers", "torch"])},
             build={"cmake_flags": flags, "cuda": build_cuda, "nvcc": self.probe.nvcc_version() if build_cuda else None, "compiler": compiler, "jobs": jobs},
             validation_commands=[
-                {"argv": [*commands["llama-completion"], "--version"], "returncodes": [0]},
                 {"argv": [*commands["llama-server"], "--version"], "returncodes": [0]},
                 {"argv": [*commands["llama-quantize"], "--help"], "returncodes": [0, 1], "expect": "usage"},
                 {"argv": [*commands["convert"], "--print-supported-models"], "returncodes": [0]},

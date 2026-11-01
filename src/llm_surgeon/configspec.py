@@ -436,7 +436,7 @@ SPEC = S(
                         "llama_cpp_repo": F("string", LLAMA_CPP_REPO),
                         "llama_cpp_revision": F("string", None, nullable=True, description=f"null uses the verified pin {LLAMA_CPP_PINNED_REVISION}."),
                         "build_cuda": F("string", "auto", enum=("auto", "on", "off")),
-                        "cuda_architectures": F("string", "auto", description="'auto' derives from nvidia-smi compute capability (B200 -> 100)."),
+                        "cuda_architectures": F("string", "auto", description="'auto' derives from nvidia-smi compute capability (B200 -> 100, B300 -> 103)."),
                         "converter_transformers": F(
                             "string",
                             None,

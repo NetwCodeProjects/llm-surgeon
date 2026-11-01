@@ -11,7 +11,7 @@
 - Quantization reads the master (or source) and never writes to it; its quick fingerprint is compared
   before and after stage 08 (`E_INPUT_MUTATED`), and the master files are read-only.
 
-## FP8 (B200)
+## FP8 (Hopper and Blackwell; native FP8 needs compute capability ≥ 8.9)
 
 Backend: llm-compressor **0.14.0.1** `model_free_ptq` (data-free; operates directly on safetensors
 shards, no model class needed — suited to new hybrid/multimodal architectures), output in
@@ -73,7 +73,8 @@ but are better with it.
 Verification: GGUF metadata (architecture, tokenizer, chat template) is read with a pure-Python
 parser; one `llama-server -c <smoke_context> -ngl <layers>` per export must produce non-degenerate
 text for the raw loader prompts (no chat template) and then answers the comparison suite in the same
-load (docs/evaluation.md); with an mmproj, `llama-mtmd-cli --image <generated red square>` must run
+load (docs/evaluation.md); with an mmproj the same server (started with `--mmproj`) must answer a question
+about a generated red square through `/v1/chat/completions`
 (only then `image` is listed in `modalities_tested`).
 
 ## Approximate sizes and the RTX A4000 (16 GB)

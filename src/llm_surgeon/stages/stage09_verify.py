@@ -14,7 +14,6 @@ import zlib
 from pathlib import Path
 from typing import Any
 
-from ..adapters import llama_cpp as LC
 from ..adapters.llama_server import LlamaServer, LlamaServerError
 from ..artifacts import assessments as A
 from ..artifacts.gguf_meta import read_metadata
@@ -23,7 +22,7 @@ from ..environment.capabilities import native_fp8
 from ..errors import ExitCode, Interrupted, PipelineError
 from ..evaluation import comparison as C
 from ..evaluation.qualification import integrity_issues
-from ..fsutil import atomic_write_bytes, atomic_write_json, file_inventory, read_json, sha256_file, sha256_obj, sha256_text
+from ..fsutil import atomic_write_json, file_inventory, read_json, sha256_file, sha256_obj, sha256_text
 from .base import Stage, StageContext
 from .stage06_qualify import run_generation_script
 from .stage08_quantize import input_role, is_projector
@@ -31,14 +30,14 @@ from .stage08_quantize import input_role, is_projector
 PRESERVED = TOKENIZER_FILES + PROCESSOR_FILES + ("generation_config.json",)
 
 
-def tiny_png(path: Path, rgb: tuple[int, int, int] = (220, 20, 20), size: int = 64) -> None:
+def tiny_png(rgb: tuple[int, int, int] = (220, 20, 20), size: int = 64) -> bytes:
+    """A solid-color PNG (the image test asks for its color)."""
     raw = b"".join(b"\x00" + bytes(rgb) * size for _ in range(size))
 
     def chunk(kind: bytes, data: bytes) -> bytes:
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
 
-    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
-    atomic_write_bytes(path, png)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
 
 
 # transformers 5 saves image/video processor settings inside processor_config.json (verified with
@@ -303,10 +302,11 @@ class VerifyExportsStage(Stage):
         return ("all" if record.build.get("cuda") else "0") if layers == "auto" else layers
 
     def _gguf_runs(self, ctx: StageContext, art_dir: Path, suite: list[dict[str, Any]] | None) -> tuple[dict[str, Any], list[dict[str, Any]] | None]:
-        """Loader smoke test and, with ``suite``, the comparison prompts as rendered by the baseline, all through one
-        llama-server (one model load). The image test runs separately with llama-mtmd-cli.
+        """Loader smoke test, the image test (with an mmproj) and, with ``suite``, the comparison prompts as rendered by
+        the baseline, all through one llama-server (one model load).
 
-        The suite rows are None when the model did not load or a request failed."""
+        If the server cannot start with the projector, the text tests run on a server without it and the image test
+        fails. The suite rows are None when the model did not load or a request failed."""
         config = ctx.config
         record = ctx.run.components(ctx.log_dir).get("llama_cpp")
         ggufs = sorted(art_dir.glob("*.gguf"))
@@ -317,43 +317,60 @@ class VerifyExportsStage(Stage):
         layers = self._gguf_layers(ctx, record)
         ctxlen = config.get("quantization.gguf.smoke_context")
         timeout = float(config.get("quantization.gguf.smoke_timeout_minutes")) * 60
-        threads = ctx.run.probe.available_cpus()
         samples: list[str] = []
         rows: list[dict[str, Any]] | None = None
-        error = None
+        errors: list[str] = []
+        image_test: dict[str, Any] | None = None
+        load_seconds = None
+        ok = False
         with ctx.generation_dir(f"gguf-{art_dir.name}") as work:
-            server = LlamaServer(
-                ctx.run.runner,
-                record.cmd("llama-server"),
-                model,
-                ctx=ctxlen,
-                gpu_layers=layers,
-                threads=threads,
-                env=ctx.run.tool_env(record),
-                log_dir=work,
-                name=f"llama-server-{art_dir.name}",
-                timeout_seconds=timeout,
-                interrupt_event=ctx.run.interrupt_event,
-            )
-            ok = False
-            try:
-                with server:
-                    ok = True
-                    for prompt in config.get("quantization.smoke_prompts"):
-                        generated = server.complete(prompt, config.get("quantization.smoke_max_tokens"))["response"].strip()
-                        samples.append(generated[:500])
-                        if not generated or integrity_issues(generated, include_thinking=True):
-                            ok = False
-                    if suite:
-                        rows = []
-                        for item in suite:
-                            out = server.complete(item["rendered"], config.get("evaluation.comparison.max_new_tokens"))
-                            rows.append(
-                                {"id": item["id"], "kind": item["kind"], **{k: out[k] for k in ("response", "finish_reason", "prompt_tokens", "new_tokens")}}
-                            )
-            except LlamaServerError as exc:
-                ok, rows, error = False, None, str(exc)
-                ctx.warn(f"{art_dir.name}: {exc}")
+            projectors = [mmproj, None] if mmproj is not None else [None]
+            for projector in projectors:
+                server = LlamaServer(
+                    ctx.run.runner,
+                    record.cmd("llama-server"),
+                    model,
+                    ctx=ctxlen,
+                    gpu_layers=layers,
+                    threads=ctx.run.probe.available_cpus(),
+                    mmproj=projector,
+                    env=ctx.run.tool_env(record),
+                    log_dir=work,
+                    name=f"llama-server-{art_dir.name}" + ("" if projector is not None or mmproj is None else "-text-only"),
+                    timeout_seconds=timeout,
+                    interrupt_event=ctx.run.interrupt_event,
+                )
+                try:
+                    with server:
+                        load_seconds = server.load_seconds
+                        ok = True
+                        for prompt in config.get("quantization.smoke_prompts"):
+                            generated = server.complete(prompt, config.get("quantization.smoke_max_tokens"))["response"].strip()
+                            samples.append(generated[:500])
+                            if not generated or integrity_issues(generated, include_thinking=True):
+                                ok = False
+                        if projector is not None:
+                            answer = server.describe_image(tiny_png(), "What color is this image? Answer in one word.", 16).strip()
+                            image_test = {"passed": bool(answer), "mentions_red": "red" in answer.lower(), "answer": answer[:80]}
+                        if suite:
+                            rows = []
+                            for item in suite:
+                                out = server.complete(item["rendered"], config.get("evaluation.comparison.max_new_tokens"))
+                                rows.append(
+                                    {
+                                        "id": item["id"],
+                                        "kind": item["kind"],
+                                        **{k: out[k] for k in ("response", "finish_reason", "prompt_tokens", "new_tokens")},
+                                    }
+                                )
+                    break
+                except LlamaServerError as exc:
+                    ok, rows, samples = False, None, []
+                    errors.append(str(exc))
+                    ctx.warn(f"{art_dir.name}: {exc}")
+                    if projector is None or load_seconds is not None:
+                        break  # the text model itself failed, or a request failed after loading: no retry
+                    image_test = {"passed": False, "mentions_red": False, "error": "llama-server could not start with the projector"}
             result = {
                 "ran": True,
                 "passed": ok,
@@ -361,31 +378,19 @@ class VerifyExportsStage(Stage):
                 "backend_revision": f"llama.cpp {record.versions.get('commit')}",
                 "versions": record.versions,
                 "runtime": "llama-server",
-                "load_seconds": server.load_seconds,
+                "load_seconds": load_seconds,
                 "tested_context": ctxlen if ok else None,
                 "gpu_layers": layers,
                 "modalities": ["text"] if ok else [],
                 **self._texts(samples, ctx.redact),
             }
-            if error:
-                result["error"] = error
+            if errors:
+                result["error"] = " | ".join(errors)
             if mmproj is not None:
-                image = work / "smoke-red-square.png"
-                tiny_png(image)
-                res = ctx.run.runner.run(
-                    LC.mtmd_argv(record.cmd("llama-mtmd-cli"), model, mmproj, image, "What color is this image? Answer in one word.", 16, ctxlen, layers),
-                    cwd=None,
-                    env=ctx.run.tool_env(record),
-                    log_dir=work,
-                    name=f"gguf-mtmd-{art_dir.name}",
-                    timeout_seconds=timeout,
-                )
-                if res.interrupted:
-                    raise Interrupted()
-                out_text = Path(res.stdout_log).read_text(encoding="utf-8", errors="replace")
-                image_ok = res.ok and bool(out_text.strip().splitlines()[1:] if out_text.strip() else False)
-                result["image_test"] = {"passed": image_ok, "mentions_red": "red" in out_text.lower(), "returncode": res.returncode}
-                if image_ok and ok:
+                result["image_test"] = image_test or {"passed": False, "mentions_red": False, "error": "not run"}
+                if ctx.redact:
+                    result["image_test"].pop("answer", None)
+                if result["image_test"]["passed"] and ok:
                     result["modalities"].append("image")
         return result, rows
 

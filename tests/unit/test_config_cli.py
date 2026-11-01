@@ -30,10 +30,14 @@ def test_builtin_defaults_validate():
 
 
 def test_shipped_configs_resolve():
-    for name in ("pipeline.yaml", "pipeline.example.yaml"):
-        cfg = build_config(ROOT / "configs" / name)
-        assert cfg.get("model.url") == "Qwen/Qwen3.8-27B"
-        assert cfg.get("quantization.formats") == ["fp8", "iq4_xs", "iq3_s"]
+    release = build_config(ROOT / "configs" / "pipeline.yaml")  # the release config (docs/release.md)
+    assert release.get("model.url") == "Qwen/Qwen3.8-27B" and release.get("quantization.formats") == ["fp8", "q4_k_m"]
+    assert release.get("execution.allow_partial_exports") is False and release.get("selection.graft_missing_source_tensors") == ["mtp."]
+    example = build_config(ROOT / "configs" / "pipeline.example.yaml")
+    assert example.get("model.url") == "Qwen/Qwen3.8-27B" and example.get("quantization.formats") == ["fp8", "iq4_xs", "iq3_s"]
+    local = build_config(ROOT / "configs" / "acceptance" / "local-cpu.yaml")  # docs/acceptance.md
+    assert local.get("model.url") == "Qwen/Qwen3.5-0.8B" and local.get("quantization.formats") == ["fp8", "q4_k_m"]
+    assert local.get("quantization.fp8.verify_backend") == "none" and local.get("environment.torch_backend") == "cpu"
 
 
 def test_examples_resolve():

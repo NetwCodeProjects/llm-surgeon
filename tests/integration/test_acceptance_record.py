@@ -1,22 +1,16 @@
-"""Step 7: scripts/acceptance_record.py on a mocked acceptance run (docs/acceptance.md, fake runtimes)."""
+"""Run records (llm_surgeon.release_record) on mocked runs: acceptance (docs/acceptance.md) and release."""
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
 import sys
 
 from conftest import ROOT
 
+from llm_surgeon import release_record as module
+
 SCRIPT = ROOT / "scripts" / "acceptance_record.py"
-
-
-def load_script():
-    spec = importlib.util.spec_from_file_location("acceptance_record", SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def runs(env) -> set[str]:
@@ -44,24 +38,25 @@ def test_record_of_a_mocked_acceptance_run(env):
          "--expect-model", "Qwen/Qwen3.8-27B", "--out", str(out_dir)],
         capture_output=True, text=True, timeout=120,
     )  # fmt: skip
-    assert proc.returncode == 1, proc.stdout + proc.stderr  # not accepted: see clean_setup and code_revision
+    assert proc.returncode == 1, proc.stdout + proc.stderr  # not accepted: see clean_setup
     record = json.loads((out_dir / "acceptance-record.json").read_text(encoding="utf-8"))
     results = {c["id"]: c["result"] for c in record["checks"]}
     assert results == {
         "clean_setup": "failed",
         "tool_reuse": "passed",
+        "run_complete": "passed",
         "full_size_transform": "passed",
         "budget_export_only": "passed",
         "resume_after_interrupt": "passed",
         "promotion": "passed",
         "export_loading": "passed",
         "comparison": "passed",
-        "code_revision": "unresolved",
+        "code_revision": "passed",
     }, {c["id"]: c["detail"] for c in record["checks"]}
     by_id = {c["id"]: c for c in record["checks"]}
     assert by_id["clean_setup"]["detail"].startswith("not every component installed")
     assert by_id["resume_after_interrupt"]["values"]["stages"] == ["05"]
-    assert record["verdict"] == "not accepted" and record["unresolved"] == ["code_revision"] and record["failed"] == ["clean_setup"]
+    assert record["verdict"] == "not accepted" and record["unresolved"] == [] and record["failed"] == ["clean_setup"]
     m = record["measurements"]
     assert set(m["artifact_bytes"]) == {"source", "master", "export:fp8", "export:gguf:iq4_xs", "export:gguf:iq3_s"}
     assert m["stages"]["05"]["outcome"] == "succeeded" and m["setup_seconds"] is not None
@@ -69,8 +64,26 @@ def test_record_of_a_mocked_acceptance_run(env):
     assert "# Acceptance record: not accepted" in md and "| Budget stop, then export-only with zero new trials | **passed** |" in md
 
 
+def test_release_record_of_a_complete_run(env):
+    env.provision()
+    code, out = env.run()
+    assert code == 0, out
+    run = env.latest_run().name
+    record = module.build_record(env.workspace, run, kind="release")
+    assert [(c["id"], c["result"]) for c in record["checks"]] == [
+        ("run_complete", "passed"),
+        ("full_size_transform", "passed"),
+        ("promotion", "passed"),
+        ("export_loading", "passed"),
+        ("comparison", "passed"),
+        ("code_revision", "passed"),
+    ]
+    assert record["verdict"] == "ready" and record["kind"] == "release"
+    path = module.write_record(record, env.tmp / "rec")
+    assert path.name == "release-record.md" and "# Release record: ready" in path.read_text(encoding="utf-8")
+
+
 def test_a_clean_setup_and_a_wrong_model_are_judged(tmp_path):
-    module = load_script()
     run = tmp_path / "ws" / "runs" / "r1"
     (run / "receipts").mkdir(parents=True)
     receipt = {

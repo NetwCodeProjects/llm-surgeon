@@ -1,4 +1,5 @@
-# Opinionated configuration: Qwen/Qwen3.8-27B on one NVIDIA B200 (Lambda Cloud).
+# Release configuration: Qwen/Qwen3.8-27B on one NVIDIA B300 or B200 (docs/release.md). The run publishes,
+# after its release record says ready, the BF16 master, FP8 and GGUF Q4_K_M (with the vision projector).
 #
 # COMPATIBILITY NOTICE: This platform does not automatically verify that your model architecture is
 # supported by the selected abliteration engine or quantization backend. Verify compatibility with the
@@ -94,11 +95,12 @@ selection:
 quantization:
   enabled: true
   input: selected_master
+  formats: [fp8, q4_k_m]             # the published formats; the BF16 master is published as well
 
 execution:
   resume: true
   stop_on_failure: true
-  allow_partial_exports: true
+  allow_partial_exports: false      # a release run must produce every export
   hourly_rate_usd: null              # e.g. 4.99 to get a clearly-labelled cost estimate
 
 storage:

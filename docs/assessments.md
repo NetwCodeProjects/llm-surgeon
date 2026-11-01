@@ -28,7 +28,7 @@ two records.
 |---|---|
 | `schema_version` | `1.0` (`schemas/assessment.schema.json`) |
 | `assessment_id`, `artifact_id`, `role`, `run_id`, `stage_id`, `created_utc` | identity |
-| `kind` | `promotion` (stage 07), `verification` (stage 09), `comparison` (stage 09) |
+| `kind` | `promotion` (stage 07), `verification` (stage 09), `comparison` (stage 09), `publication` (`--publish`; stage id `publish`: repository, revision and the remote file check) |
 | `suite` | `{id, version, sha256}` of the prompt set and scorer that were used; `null` when no prompts were involved |
 | `runtime` | `{backend, version, environment_fingerprint}`; the fingerprint is the sha256 of the tool environment's recorded versions and the GPU names |
 | `generation_contract` | see [Comparison contract](evaluation.md#comparison-contract); `null` without generation |

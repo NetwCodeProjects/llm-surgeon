@@ -109,6 +109,11 @@ def build_parser() -> argparse.ArgumentParser:
     info.add_argument("--status", metavar="RUN_ID", help="print a run's status.json and exit")
     info.add_argument("--cleanup", action="store_true", help="show (dry-run) what can be deleted safely; never sources or finalized exports")
     info.add_argument("--confirm-cleanup", metavar="TOKEN", help="with --cleanup: delete exactly the reviewed plan")
+    pub = p.add_argument_group("publishing (docs/release.md)")
+    pub.add_argument("--publish", metavar="RUN_ID", help="show the plan to upload a ready run to private Hugging Face repositories")
+    pub.add_argument("--hf-namespace", metavar="NAME", help="with --publish: your Hugging Face user or organization")
+    pub.add_argument("--repo-name", metavar="NAME", help="with --publish: base repository name (default <source model>-abliterated)")
+    pub.add_argument("--confirm-publish", metavar="TOKEN", help="with --publish and --yes: upload exactly the reviewed plan")
     return p
 
 
@@ -125,6 +130,10 @@ def check_combinations(args: argparse.Namespace, parser: argparse.ArgumentParser
         parser.error("--experiment/--max-trials/--trial-id/--pareto-index/--allow-approximate-reproduction have no effect with --quantize-only")
     if args.confirm_cleanup and not args.cleanup:
         parser.error("--confirm-cleanup requires --cleanup")
+    if (args.hf_namespace or args.repo_name or args.confirm_publish) and not args.publish:
+        parser.error("--hf-namespace/--repo-name/--confirm-publish require --publish RUN_ID")
+    if args.publish and not args.hf_namespace:
+        parser.error("--publish requires --hf-namespace")
 
 
 def to_overrides(args: argparse.Namespace) -> dict[str, Any]:
@@ -249,7 +258,7 @@ def main(argv: list[str] | None = None, services: Any = None, stream=None) -> in
                 stream.write(f"{stage.id}  {stage.name:20s} {stage.title}\n")
             return int(ExitCode.OK)
         overrides = to_overrides(args)
-        maintenance = args.list_runs or args.status or args.cleanup
+        maintenance = args.list_runs or args.status or args.cleanup or args.publish
         config = build_config(
             config_path_from(args),
             overrides,
@@ -271,6 +280,11 @@ def main(argv: list[str] | None = None, services: Any = None, stream=None) -> in
             return int(ExitCode.OK)
         if args.cleanup:
             return cleanup(workspace, args.confirm_cleanup, stream)
+        if args.publish:
+            from .orchestrator import Services  # noqa: PLC0415
+            from .publish import publish  # noqa: PLC0415
+
+            return publish(workspace, args.publish, args.hf_namespace, args.repo_name, args.confirm_publish, args.yes, services or Services(), stream)
         options = RunOptions(
             from_stage=args.from_stage,
             through_stage=args.through_stage,
