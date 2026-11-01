@@ -59,6 +59,7 @@
 | new / continued study | `checkpoint_action = restart / continue` |
 | `abliteration.max_runtime_minutes` | adapter budget: SIGINT, then SIGTERM after `shutdown_grace_minutes`, then SIGKILL |
 | `abliteration.reproduce.ignore_environment_mismatches` | `ignore_mismatches` |
+| `abliteration.max_batch_size` | `max_batch_size` (cap for Heretic's batch-size auto-tuning; null keeps the template's 128) |
 | everything else (scorers, ARA, datasets, dtypes, batch size) | native template `configs/heretic/<experiment>.toml` |
 
 Template keys owned by the orchestrator (`model`, `n_trials`, `seed`, `trial_index`, `model_action`,

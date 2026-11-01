@@ -9,6 +9,7 @@ import platform
 from pathlib import Path
 from typing import Any
 
+from .. import __version__
 from ..environment.capabilities import assess, finding
 from ..environment.detect import classify_storage, detect_profile, lambda_stack_markers
 from ..errors import ExitCode, PipelineError
@@ -44,6 +45,8 @@ class PreflightStage(Stage):
             "available_cpus": probe.available_cpus(),
             "lambda_stack_markers": lambda_stack_markers(probe),
             "hf_token_present": bool(run.hf_token()),
+            # src/llm_surgeon/stages -> repository root; the acceptance record ties results to this commit
+            "code": {"version": __version__, **probe.code_revision(Path(__file__).resolve().parents[3])},
         }
         profile, reason = detect_profile(probe, config.get("environment.profile"))
         facts["profile"] = {"resolved": profile, "reason": reason}

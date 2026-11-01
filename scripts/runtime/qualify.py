@@ -143,7 +143,8 @@ def main() -> int:
         out["chat_template_sha256"] = hashlib.sha256(template.encode()).hexdigest() if template else None
         thinking = bool(spec.get("enable_thinking"))
         benign = spec.get("benign") or []
-        rows = generate(model, tokenizer, [b["prompt"] for b in benign], int(spec["max_new_tokens"]), thinking)
+        batch = int(spec.get("batch_size") or 8)
+        rows = generate(model, tokenizer, [b["prompt"] for b in benign], int(spec["max_new_tokens"]), thinking, batch)
         out["benign"] = [{**b, **r, "kind": "benign"} for b, r in zip(benign, rows, strict=True)]
         heldout, datasets_info = [], []
         remaining = spec.get("heldout_limit")
@@ -155,7 +156,7 @@ def main() -> int:
             heldout.extend(prompts)
             if remaining is not None:
                 remaining -= len(prompts)
-        rows = generate(model, tokenizer, heldout, int(spec["max_new_tokens"]), thinking)
+        rows = generate(model, tokenizer, heldout, int(spec["max_new_tokens"]), thinking, batch)
         out["heldout_refusal"] = [{"id": f"heldout-{i}", **r, "kind": "heldout_refusal"} for i, r in enumerate(rows)]
         out["datasets"] = datasets_info
         totals = [r.get("total_tokens") or 0 for r in out["benign"] + out["heldout_refusal"]]

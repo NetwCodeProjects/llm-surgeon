@@ -71,9 +71,10 @@ the pipeline fails those formats up front with `E_IMATRIX_REQUIRED`. `iq4_xs`/`i
 but are better with it.
 
 Verification: GGUF metadata (architecture, tokenizer, chat template) is read with a pure-Python
-parser; `llama-completion -no-cnv --temp 0 -c <smoke_context> -ngl <layers>` must produce non-degenerate
-text; with an mmproj, `llama-mtmd-cli --image <generated red square>` must run (only then `image` is
-listed in `modalities_tested`).
+parser; one `llama-server -c <smoke_context> -ngl <layers>` per export must produce non-degenerate
+text for the raw loader prompts (no chat template) and then answers the comparison suite in the same
+load (docs/evaluation.md); with an mmproj, `llama-mtmd-cli --image <generated red square>` must run
+(only then `image` is listed in `modalities_tested`).
 
 ## Approximate sizes and the RTX A4000 (16 GB)
 
@@ -91,6 +92,12 @@ the peak GPU memory it sampled; it never promises full-GPU loading.
 ## Independence and resumability
 
 Each format is a separate job with a sub-receipt (`receipts/08-quantize/<fmt>.json`) and a recipe ID.
+With `quantization.parallel` (default) the jobs run concurrently: FP8 beside the GGUF chain, and the
+GGUF types side by side once their shared BF16 intermediate exists, each `llama-quantize` with
+`usable CPUs / GGUF jobs` threads (`HostProbe.available_cpus`: the cgroup quota, not the host's CPU
+count; a Runpod B300 Pod reported 344 host CPUs in a ~36-CPU container). On the B300 2B run the GPU sat
+idle through the stage while FP8 (27 s) and the GGUF chain (74 s) ran one after the other.
+`quantization.parallel: false` runs one job at a time with every CPU.
 A failing format is cleaned up (`.partial` removed) and does not affect others; with
 `execution.allow_partial_exports: true` the run ends with exit 20 and the valid exports keep their
 manifests. Re-running reuses any finalized export with the same parent artifact and recipe ID.

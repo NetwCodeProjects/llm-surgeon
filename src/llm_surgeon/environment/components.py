@@ -32,7 +32,7 @@ from .detect import NVCC_ARCH_HINT, HostProbe, resolve_cuda_architectures, unsup
 
 COMPONENTS_FILE = "components.json"
 TORCH_FAMILY_RE = re.compile(r"^(torch|torchvision|torchaudio|triton|pytorch-triton|nvidia-[a-z0-9-]+)\s*(==|>=|<=|~=|@)", re.I)
-LLAMA_TARGETS = ["llama-quantize", "llama-imatrix", "llama-completion", "llama-mtmd-cli"]
+LLAMA_TARGETS = ["llama-quantize", "llama-imatrix", "llama-completion", "llama-mtmd-cli", "llama-server"]
 
 
 @dataclass
@@ -118,6 +118,7 @@ def component_specs(config: dict[str, Any], torch_plan: dict[str, Any], probe: H
             "build_cuda": gguf["build_cuda"],
             "cuda_architectures": cuda_arch,
             "converter_transformers": gguf["converter_transformers"],
+            "targets": LLAMA_TARGETS,  # adding a tool (llama-server) must rebuild existing installs
         },
     }
 
@@ -393,7 +394,7 @@ class ComponentManager:
             "-DCMAKE_BUILD_TYPE=Release",
             "-DLLAMA_BUILD_TESTS=OFF",
             "-DLLAMA_BUILD_EXAMPLES=OFF",
-            "-DLLAMA_BUILD_SERVER=OFF",
+            "-DLLAMA_BUILD_SERVER=ON",  # stage 09 loads each GGUF once in llama-server
             "-DLLAMA_OPENSSL=OFF",
         ]
         if build_cuda:
@@ -445,6 +446,7 @@ class ComponentManager:
             build={"cmake_flags": flags, "cuda": build_cuda, "nvcc": self.probe.nvcc_version() if build_cuda else None, "compiler": compiler, "jobs": jobs},
             validation_commands=[
                 {"argv": [*commands["llama-completion"], "--version"], "returncodes": [0]},
+                {"argv": [*commands["llama-server"], "--version"], "returncodes": [0]},
                 {"argv": [*commands["llama-quantize"], "--help"], "returncodes": [0, 1], "expect": "usage"},
                 {"argv": [*commands["convert"], "--print-supported-models"], "returncodes": [0]},
             ],

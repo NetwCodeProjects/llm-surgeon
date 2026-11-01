@@ -43,6 +43,7 @@ abliteration:
   heretic_config: null               # null = configs/heretic/<experiment>.toml
   max_trials: 50
   n_startup_trials: null
+  max_batch_size: null               # Heretic batch-size auto-tuning cap; null = template (128)
   max_runtime_minutes: 180
   shutdown_grace_minutes: 90
   seed: null
@@ -71,6 +72,7 @@ evaluation:
   extended_correctness: false
   enable_thinking: false
   max_new_tokens: 256
+  batch_size: 8                      # prompts per generate() call (qualification, comparison baseline)
   seed: 0
   comparison:
     enabled: true
@@ -106,6 +108,7 @@ quantization:
   input: selected_master             # selected_master | source | path
   input_path: null
   formats: ['fp8', 'iq4_xs', 'iq3_s']
+  parallel: true                     # formats run concurrently (operational)
   fp8:
     scheme: auto                     # auto (=fp8_block) | fp8_block | fp8_dynamic
     calibration_manifest: null
@@ -118,6 +121,7 @@ quantization:
     vllm_version: 0.32.0
     vllm_max_model_len: 8192
     vllm_gpu_memory_utilization: 0.85
+    vllm_enforce_eager: true           # stage 09 check without CUDA graphs
   gguf:
     llama_cpp_repo: 'https://github.com/ggml-org/llama.cpp.git'
     llama_cpp_revision: null         # null = b11889

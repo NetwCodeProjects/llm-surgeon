@@ -149,5 +149,6 @@ Comparison failures are not errors in report mode. In enforce mode they use the 
 |---|---|
 | per-export deltas with denominators; quantize-only source baseline; missing baseline → `unmeasured`; two runs → two records, neither overwritten; redaction leaves no prompt or response text in the workspace | `tests/integration/test_assessment_pipeline.py` (fake runtimes) |
 | record ids, exclusive create, derivation order, schema | `tests/unit/test_assessments.py` |
-| llama.cpp flags for the rendered prompt (`-f`, `--no-escape`, `--no-display-prompt`, `-no-cnv`) | pinned source (`d854d98`) and one real run on a Qwen3.5-0.8B GGUF: prompt token ids identical to the HF tokenizer's, no prompt echo, ` [end of text]` marker (implementation log) |
-| vLLM `LLM.generate` on rendered text | not run with real vLLM here (no GPU); fake only |
+| llama.cpp on the rendered prompt | `llama-completion -f` (pinned `d854d98`, real Qwen3.5-0.8B GGUF: prompt token ids identical to the HF tokenizer's), then `llama-server` `/completion`: byte-identical outputs, stop reasons and prompt token counts to `llama-completion -f` on five real prompts (implementation log) |
+| one `llama-server` per GGUF export, load failure, lost port race | `tests/unit/test_performance.py`, `tests/integration/test_performance_paths.py` (fake server) |
+| vLLM `LLM.generate` on rendered text | real vLLM 0.32.0 on a B300 (implementation log, 2026-10-31) |

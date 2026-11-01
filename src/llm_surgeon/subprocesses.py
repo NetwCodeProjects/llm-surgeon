@@ -79,22 +79,17 @@ class CommandRunner:
         except (ProcessLookupError, OSError):
             pass
 
-    def run(
+    def _spawn(
         self,
-        argv: Sequence[str | os.PathLike[str]],
-        *,
+        args: list[str],
         cwd: str | os.PathLike[str] | None,
         env: dict[str, str] | None,
         log_dir: Path,
         name: str,
-        budget_seconds: float | None = None,
-        grace_seconds: float = 600.0,
-        kill_after_seconds: float = 60.0,
-        timeout_seconds: float | None = None,
-        on_line: Callable[[str, str], None] | None = None,
-        echo: bool = False,
-    ) -> CommandResult:
-        args = [str(a) for a in argv]
+        on_line: Callable[[str, str], None] | None,
+        echo: bool,
+    ) -> tuple[subprocess.Popen, list[threading.Thread], Path, Path, list[str]]:
+        """Start ``args`` in its own process group with both streams pumped to logs (redacted) and a tail."""
         log_dir.mkdir(parents=True, exist_ok=True)
         out_path, err_path = log_dir / f"{name}.stdout.log", log_dir / f"{name}.stderr.log"
         kwargs: dict = {}
@@ -102,7 +97,6 @@ class CommandRunner:
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
         else:
             kwargs["start_new_session"] = True
-        started_wall, started = utc_now(), time.monotonic()
         try:
             proc = subprocess.Popen(args, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs)
         except FileNotFoundError as exc:
@@ -140,7 +134,26 @@ class CommandRunner:
         ]
         for thread in threads:
             thread.start()
+        return proc, threads, out_path, err_path, tail
 
+    def run(
+        self,
+        argv: Sequence[str | os.PathLike[str]],
+        *,
+        cwd: str | os.PathLike[str] | None,
+        env: dict[str, str] | None,
+        log_dir: Path,
+        name: str,
+        budget_seconds: float | None = None,
+        grace_seconds: float = 600.0,
+        kill_after_seconds: float = 60.0,
+        timeout_seconds: float | None = None,
+        on_line: Callable[[str, str], None] | None = None,
+        echo: bool = False,
+    ) -> CommandResult:
+        args = [str(a) for a in argv]
+        started_wall, started = utc_now(), time.monotonic()
+        proc, threads, out_path, err_path, tail = self._spawn(args, cwd, env, log_dir, name, on_line, echo)
         budget_stopped = interrupted = timed_out = killed = False
         soft_deadline = started + budget_seconds if budget_seconds else None
         hard_deadline = started + timeout_seconds if timeout_seconds else None
@@ -194,6 +207,57 @@ class CommandRunner:
             timed_out=timed_out,
             killed=killed,
             tail=list(tail),
+        )
+
+    def start(
+        self,
+        argv: Sequence[str | os.PathLike[str]],
+        *,
+        cwd: str | os.PathLike[str] | None,
+        env: dict[str, str] | None,
+        log_dir: Path,
+        name: str,
+    ) -> BackgroundProcess:
+        """Start a long-running child (a local server); the caller must stop() it."""
+        args = [str(a) for a in argv]
+        started_wall, started = utc_now(), time.monotonic()
+        proc, threads, out_path, err_path, tail = self._spawn(args, cwd, env, log_dir, name, None, False)
+        return BackgroundProcess(self, proc, threads, args, out_path, err_path, started_wall, started, tail)
+
+
+class BackgroundProcess:
+    """A child started by CommandRunner.start: logged like run(), ended by stop() (SIGTERM, then SIGKILL)."""
+
+    def __init__(self, runner: CommandRunner, proc, threads, args, out_path: Path, err_path: Path, started_wall: str, started: float, tail: list[str]):
+        self.runner, self.proc, self.threads, self.args = runner, proc, threads, args
+        self.out_path, self.err_path = out_path, err_path
+        self.started_wall, self.started, self.tail = started_wall, started, tail
+
+    def alive(self) -> bool:
+        return self.proc.poll() is None
+
+    def stop(self, grace_seconds: float = 30.0) -> CommandResult:
+        killed = False
+        if self.alive():
+            CommandRunner._signal_group(self.proc, signal.SIGTERM)
+            try:
+                self.proc.wait(timeout=grace_seconds)
+            except subprocess.TimeoutExpired:
+                killed = True
+                CommandRunner._signal_group(self.proc, getattr(signal, "SIGKILL", signal.SIGTERM))
+                self.proc.wait(timeout=30)
+        for thread in self.threads:
+            thread.join(timeout=10)
+        return CommandResult(
+            argv=[self.runner.redact(a) for a in self.args],
+            returncode=self.proc.returncode,
+            started_utc=self.started_wall,
+            ended_utc=utc_now(),
+            duration_s=time.monotonic() - self.started,
+            stdout_log=str(self.out_path),
+            stderr_log=str(self.err_path),
+            killed=killed,
+            tail=list(self.tail),
         )
 
 

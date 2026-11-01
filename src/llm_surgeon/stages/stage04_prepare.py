@@ -33,6 +33,7 @@ class PrepareEngineStage(Stage):
         "abliteration.heretic_config",
         "abliteration.max_trials",
         "abliteration.n_startup_trials",
+        "abliteration.max_batch_size",
         "abliteration.seed",
         "abliteration.reproduce",
         "evaluation.published_baselines",
@@ -133,6 +134,7 @@ class PrepareEngineStage(Stage):
                 model_path=source_path,
                 n_trials=config.get("abliteration.max_trials"),
                 n_startup_trials=config.get("abliteration.n_startup_trials"),
+                max_batch_size=config.get("abliteration.max_batch_size"),
                 seed=seed,
                 trial_index=0,  # stage 05 sets trial_index/model_action per phase (search-only, export-only)
                 save_directory="<set by stage 05>",
@@ -142,6 +144,8 @@ class PrepareEngineStage(Stage):
         else:
             template = H.native_template(template_path(config))
             native = {**template, "model": source_path, "save_directory": "<set by stage 05>"}
+            if config.get("abliteration.max_batch_size") is not None:
+                native["max_batch_size"] = int(config.get("abliteration.max_batch_size"))
             rep_diag = (run.load_receipt("02") or {}).get("diagnostics", {}).get("reproduce", {})
             if rep_diag.get("exact_file_available"):
                 original = read_json(rep_diag["path"])

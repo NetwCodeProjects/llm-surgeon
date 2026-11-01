@@ -87,9 +87,9 @@ selection:
     max_benign_correct_drop: 0.25
     max_heldout_refusal_increase: 0.25
     require_integrity: true
-  # Heretic's merged export drops the 15 'mtp.*' tensors (multi-token-prediction draft head) of this
-  # model. Add 'mtp.' to copy them verbatim from the source (they were not abliterated).
-  graft_missing_source_tensors: []
+  # graft_missing_source_tensors comes from profiles/qwen3_5.yaml (['mtp.']): Heretic's merged export
+  # drops the 15 'mtp.*' tensors (multi-token-prediction draft head), and the profile copies them verbatim
+  # from the source. Set [] here to export without them.
 
 quantization:
   enabled: true

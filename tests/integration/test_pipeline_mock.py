@@ -32,8 +32,9 @@ def test_full_pipeline_produces_manifests_with_lineage(env):
         assert all(len(f["sha256"]) == 64 for f in manifests[role]["artifact"]["files"])
     assert manifests["export:fp8"]["precision"] == "fp8"
     assert manifests["export:gguf:iq4_xs"]["validation"]["modalities_tested"] == ["text", "image"]
-    # Heretic's merged export dropped mtp.* tensors: recorded, not hidden.
-    assert master["extensions"]["tensor_diff_vs_source"]["missing_prefixes"] == {"mtp": 2}
+    # Heretic's merged export drops mtp.* tensors; the qwen3_5 profile restores them from the source (recorded).
+    assert master["extensions"]["tensor_diff_vs_source"]["missing_prefixes"] == {}
+    assert len(master["extensions"]["grafted_tensors"]["grafted"]) == 2
     assert (run / "reports" / "report.md").exists()
     summary = json.loads((run / "reports" / "run-summary.json").read_text())
     assert summary["complete"] is True

@@ -1,0 +1,68 @@
+# Acceptance run: Qwen/Qwen3.8-27B on one NVIDIA B300 (also valid on a B200: CUDA architectures are
+# resolved from the GPU). The procedure and the commands are in docs/acceptance.md; the record comes from
+# scripts/acceptance_record.py.
+#
+# Same model, profiles and gates as configs/pipeline.yaml, with a search that is meant to be stopped by
+# its budget: max_trials is far above what fits in max_runtime_minutes, so the budget stop and the
+# export-only phase that follows are exercised on the real engine. n_startup_trials is low so the
+# optimizer's guided trials start within the budget (the template default is 30 random trials).
+#
+# COMPATIBILITY NOTICE: see configs/pipeline.yaml.
+schema_version: '1.0'
+profiles:
+  - ../quantization/default.yaml
+  - ../profiles/qwen3_5.yaml         # includes the mtp.* graft
+
+model:
+  url: Qwen/Qwen3.8-27B
+  revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+  trust_remote_code: false
+  hf_token_env: HF_TOKEN
+
+environment:
+  profile: auto
+  install_missing: true
+  allow_system_packages: false
+  allow_driver_changes: false
+  allow_reboot: false
+  python_version: '3.12'
+  torch_backend: auto
+  min_free_disk_gb: 50
+  disk_buffer_gb: 100
+
+abliteration:
+  enabled: true
+  experiment: optimize
+  max_trials: 200                    # deliberately unreachable within the budget below
+  n_startup_trials: 8
+  max_runtime_minutes: 60            # the budget stop is part of the acceptance run
+  shutdown_grace_minutes: 90
+  max_batch_size: null               # template value (128); measured separately after the record (docs/acceptance.md)
+
+evaluation:
+  baseline_mode: published_only
+  published_baselines: configs/baselines/qwen3.8-27b.yaml
+  qualification: fast
+  enable_thinking: false
+  comparison:
+    enabled: true
+
+selection:
+  profile: qualified
+  export_gates:
+    mode: report
+
+quantization:
+  enabled: true
+  input: selected_master
+  formats: [fp8, q8_0, iq4_xs]       # native-FP8 vLLM check, plus the two GGUF types the B300 2B run exercised
+  parallel: true
+
+execution:
+  resume: true
+  stop_on_failure: true
+  allow_partial_exports: true
+
+logging:
+  console_level: info
+  resource_sample_seconds: 15

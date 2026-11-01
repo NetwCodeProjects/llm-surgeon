@@ -162,6 +162,13 @@ class Run:
             "HF_HOME": str(self.cache_root / "hf"),
             "HF_HUB_CACHE": str(self.cache_root / "hf" / "hub"),
             "UV_CACHE_DIR": str(self.cache_root / "uv"),
+            # Kernel and compile caches live in the workspace, not the home directory: on a B300 vLLM's first
+            # start took 279 s (FlashInfer JIT for sm_103a, torch.compile) and a warm one 63.9 s, and a Pod's home
+            # directory is not where results are kept or copied from.
+            "VLLM_CACHE_ROOT": str(self.cache_root / "vllm"),
+            "FLASHINFER_WORKSPACE_BASE": str(self.cache_root / "flashinfer"),  # flashinfer/jit/env.py (0.7.0.post1)
+            "TRITON_CACHE_DIR": str(self.cache_root / "triton"),
+            "TORCHINDUCTOR_CACHE_DIR": str(self.cache_root / "torchinductor"),
         }
         token = self.hf_token()
         if token:

@@ -17,7 +17,7 @@ SUITE_ID = "comparison"
 SUITE_VERSION = "1"
 STOP = "end-of-sequence tokens of the model only; no stop strings"
 TRUNCATION = "none: a backend whose configured context is smaller than required gets a contract gap"
-LLAMA_CPP_BASIS = "llama.cpp d854d98 tools/completion/completion.cpp"
+LLAMA_CPP_BASIS = "llama.cpp d854d98 tools/server/server-context.cpp"
 # Contract fields a backend cannot honor, independent of the run (docs/evaluation.md#what-each-backend-cannot-honor).
 STATIC_GAPS: dict[str, list[dict[str, str]]] = {
     "transformers": [],
@@ -26,7 +26,7 @@ STATIC_GAPS: dict[str, list[dict[str, str]]] = {
         {
             "field": "tokenization",
             "detail": "the rendered text is tokenized from the GGUF vocabulary (special tokens parsed, BOS per GGUF metadata), not by the Hugging Face tokenizer",
-            "basis": f"{LLAMA_CPP_BASIS}: common_tokenize(ctx, prompt, true, true); add_bos = llama_vocab_get_add_bos(vocab)",
+            "basis": f"{LLAMA_CPP_BASIS}: /completion tokenize_input_prompts(vocab, mctx, prompt, true, true); BOS only if llama_vocab_get_add_bos",
         },
         {
             "field": "stop",
@@ -98,6 +98,19 @@ def contract(spec: dict[str, Any], baseline_raw: dict[str, Any] | None, redact: 
     }
     rows = [{"id": p["id"], "kind": p["kind"], **text_fields("prompt", p["prompt"], redact), **text_fields("rendered", p["rendered"], redact)} for p in prompts]
     return {"contract_id": sha256_obj({**body, "prompts": [[r["id"], r["rendered_sha256"]] for r in rows]}), **body, "prompts": rows}
+
+
+def prompt_token_check(suite: list[dict[str, Any]], rows: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    """Prompt length in tokens per prompt, export runtime vs baseline tokenizer: a cheap check that both
+    tokenized the same rendered text alike (a mismatch shows a tokenizer or BOS difference)."""
+    if not rows:
+        return None
+    baseline = {p["id"]: p.get("prompt_tokens") for p in suite}
+    pairs = [(r["id"], baseline.get(r["id"]), r.get("prompt_tokens")) for r in rows]
+    known = [(i, b, e) for i, b, e in pairs if b is not None and e is not None]
+    if not known:
+        return None
+    return {"compared": len(known), "mismatches": [{"id": i, "baseline": b, "export": e} for i, b, e in known if b != e]}
 
 
 def backend_gaps(backend: str, context_limit: int | None, required_tokens: int | None) -> list[dict[str, str]]:

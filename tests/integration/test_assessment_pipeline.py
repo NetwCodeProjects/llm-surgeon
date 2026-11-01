@@ -40,7 +40,8 @@ def test_per_export_deltas_with_denominators(env, monkeypatch):
     assert bad["deltas"]["heldout_refused"] == {"baseline": "1/4", "export": "4/4", "delta": 3, "rate_delta": 0.75}
     assert "exported runtime (llama.cpp, iq3_s) vs baseline runtime (transformers, master)" == bad["description"]
     assert [g["field"] for g in bad["contract_gaps"]] == ["tokenization", "stop"]
-    assert doc["exports"]["export:fp8"]["outcome"] == "passed" and doc["exports"]["export:fp8"]["contract_gaps"] == []
+    fp8 = doc["exports"]["export:fp8"]
+    assert fp8["outcome"] == "passed" and [(g["field"], g["basis"]) for g in fp8["contract_gaps"]] == [("runtime", "quantization.fp8.vllm_enforce_eager")]
     m = manifests(env, run)
     master = m["master"]
     kinds = [r["kind"] for r in master["assessments"]]

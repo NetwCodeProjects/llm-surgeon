@@ -167,7 +167,7 @@ class SelectMasterStage(Stage):
         summary = dtype_summary(tensors)
         diff = tensor_diff(tensor_map(source_manifest["artifact"]["uri"]), tensors)
         ctx.info(f"Hashing master files in {dest}")
-        files = [e.to_dict() for e in file_inventory(dest)]
+        files = [e.to_dict() for e in file_inventory(dest, workers=ctx.hash_workers)]
         try:
             make_read_only(dest)
             read_only = True

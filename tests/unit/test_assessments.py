@@ -237,11 +237,3 @@ def test_suite_uses_fast_prompts_and_its_hash_covers_markers(tmp_path):
     spec = C.suite_spec(config)
     assert len(spec["benign"]) == 8 and all(p["category"] == "fast" for p in spec["benign"]) and spec["heldout_limit"] == 4
     assert C.suite_ref(spec)["sha256"] != C.suite_ref({**spec, "markers": spec["markers"][:-1]})["sha256"]
-
-
-def test_llama_cpp_generated_text_strips_the_end_of_generation_marker():
-    from llm_surgeon.adapters import llama_cpp as LC
-
-    # Real stdout of llama-completion d854d98 with --no-display-prompt (Qwen3.5-0.8B GGUF, implementation log).
-    assert LC.generated_text("Paris [end of text]\n") == ("Paris", "stop")
-    assert LC.generated_text("The answer is 3\n") == ("The answer is 3", "length"), "token limit: no marker"

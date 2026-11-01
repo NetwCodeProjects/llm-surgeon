@@ -10,11 +10,11 @@ from pathlib import Path
 
 
 def count(tool: str) -> None:
+    """One line per call: appends are atomic, so concurrent fake tools (stage 08 runs formats in parallel) never lose a count."""
     directory = os.environ.get("FAKE_COUNTER_DIR")
     if directory:
-        path = Path(directory) / f"{tool}.count"
-        n = int(path.read_text()) if path.exists() else 0
-        path.write_text(str(n + 1))
+        with open(Path(directory) / f"{tool}.count", "a", encoding="utf-8") as handle:
+            handle.write("1\n")
 
 
 def log(tool: str, message: str) -> None:

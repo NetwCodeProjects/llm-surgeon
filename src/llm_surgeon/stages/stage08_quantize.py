@@ -3,13 +3,19 @@
 Each format is its own job with its own sub-receipt. A failure in one format never touches other
 outputs; with ``execution.allow_partial_exports`` the stage succeeds as *partial*. The input
 checkpoint is fingerprinted before and after and must be unchanged.
+
+With ``quantization.parallel`` the jobs run concurrently: on a B300 the GPU sat idle for the whole
+stage while FP8 (27 s) and the GGUF chain (74 s) ran one after the other on independent inputs. GGUF
+types wait for their shared intermediate, then quantize side by side with the CPUs split between them.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -127,7 +133,7 @@ class QuantizeStage(Stage):
             )
 
     def _finalize(self, ctx: StageContext, partial: Path, final: Path) -> list[dict[str, Any]]:
-        files = [e.to_dict() for e in file_inventory(partial)]
+        files = [e.to_dict() for e in file_inventory(partial, workers=ctx.hash_workers)]
         if final.exists():
             raise PipelineError(
                 ExitCode.QUANTIZE,
@@ -309,7 +315,7 @@ class QuantizeStage(Stage):
         name = safe_component(f"{ctx.config.get('model.family')}-{inp['artifact_id'][4:12]}-{fmt}")
         return ctx.run.workspace / "exports" / "gguf" / name
 
-    def _gguf(self, ctx: StageContext, inp: dict[str, Any], fmt: str, get_inter: Callable[[], dict[str, Any]], record) -> dict[str, Any]:
+    def _gguf(self, ctx: StageContext, inp: dict[str, Any], fmt: str, get_inter: Callable[[], dict[str, Any]], record, threads: int) -> dict[str, Any]:
         run, config = ctx.run, ctx.config
         recipe_id = self._gguf_recipe_id(ctx, record, fmt)
         final = self._gguf_target(ctx, inp, fmt)
@@ -345,7 +351,7 @@ class QuantizeStage(Stage):
             self._run_tool(
                 ctx,
                 record,
-                LC.quantize_argv(record.cmd("llama-quantize"), Path(inter["model"]), out_file, fmt, Path(imatrix["path"]) if imatrix else None),
+                LC.quantize_argv(record.cmd("llama-quantize"), Path(inter["model"]), out_file, fmt, Path(imatrix["path"]) if imatrix else None, threads),
                 f"gguf-quantize-{fmt}",
             )
             if not out_file.is_file():
@@ -423,14 +429,8 @@ class QuantizeStage(Stage):
         results: dict[str, Any] = {}
         errors: list[PipelineError] = []
         inter: dict[str, Any] | None = None
-        llama = None
-
-        def get_inter() -> dict[str, Any]:
-            nonlocal inter
-            if inter is None:
-                inter = self._gguf_intermediate(ctx, inp, llama)
-            return inter
-
+        inter_lock = threading.Lock()
+        pending: list[tuple[str, str]] = []
         for fmt in formats:
             run.check_interrupt()
             job_key = sha256_obj(
@@ -446,26 +446,59 @@ class QuantizeStage(Stage):
                 results[fmt] = {**reused, "reused": True}
                 ctx.output_artifacts.append(reused["artifact_id"])
                 ctx.info(f"{fmt}: reusing validated export {reused['path']}")
-                continue
+            else:
+                pending.append((fmt, job_key))
+        gguf_jobs = [fmt for fmt, _ in pending if fmt != "fp8"]
+        llama = run.components(ctx.log_dir).get("llama_cpp") if gguf_jobs else None
+        parallel = bool(config.get("quantization.parallel")) and len(pending) > 1
+        threads = max(1, run.probe.available_cpus() // (len(gguf_jobs) if parallel and gguf_jobs else 1))
+
+        inter_error: list[PipelineError] = []
+
+        def get_inter() -> dict[str, Any]:
+            nonlocal inter
+            with inter_lock:  # the first GGUF job builds it; the others wait and reuse it (or its failure)
+                if inter_error:
+                    raise inter_error[0]
+                if inter is None:
+                    try:
+                        inter = self._gguf_intermediate(ctx, inp, llama)
+                    except PipelineError as exc:
+                        inter_error.append(exc)
+                        raise
+                return inter
+
+        def job(fmt: str, job_key: str) -> tuple[dict[str, Any], PipelineError | None]:
+            run.check_interrupt()
             started = utc_now()
+            error = None
             try:
-                if fmt == "fp8":
-                    job = self._fp8(ctx, inp)
-                else:
-                    if llama is None:
-                        llama = run.components(ctx.log_dir).get("llama_cpp")
-                    job = self._gguf(ctx, inp, fmt, get_inter, llama)
-                sub = {"format": fmt, "outcome": "succeeded", "job_key": job_key, "started_utc": started, "ended_utc": utc_now(), **job}
-                ctx.output_artifacts.append(job["artifact_id"])
-                ctx.info(f"{fmt}: exported {job['path']}")
+                done = self._fp8(ctx, inp) if fmt == "fp8" else self._gguf(ctx, inp, fmt, get_inter, llama, threads)
+                sub = {"format": fmt, "outcome": "succeeded", "job_key": job_key, "started_utc": started, "ended_utc": utc_now(), **done}
+                ctx.output_artifacts.append(done["artifact_id"])
+                ctx.info(f"{fmt}: exported {done['path']}")
             except Interrupted:
-                raise
+                raise  # Interrupted is a PipelineError: never record it as a failed format
             except PipelineError as exc:
-                errors.append(exc)
+                error = exc
                 sub = {"format": fmt, "outcome": "failed", "job_key": job_key, "started_utc": started, "ended_utc": utc_now(), "error": exc.to_dict()}
                 ctx.warn(f"{fmt}: FAILED - {exc.message}")
             atomic_write_json(self._sub_receipt_path(ctx, fmt), sub)
+            return sub, error
+
+        if parallel:
+            ctx.info(f"Quantizing {len(pending)} formats concurrently ({threads} llama-quantize threads each)")
+            with ThreadPoolExecutor(max_workers=len(pending), thread_name_prefix="quantize") as pool:
+                futures = [pool.submit(job, fmt, key) for fmt, key in pending]
+            outcomes = [f.result() for f in futures]  # Interrupted (or a bug) from any job is raised here
+        else:
+            outcomes = [job(fmt, key) for fmt, key in pending]
+        for (fmt, _), (sub, error) in zip(pending, outcomes, strict=True):
             results[fmt] = sub
+            if error is not None:
+                errors.append(error)
+        results = {fmt: results[fmt] for fmt in formats}
+        ctx.diagnostics["parallel"] = {"enabled": parallel, "jobs": len(pending), "llama_quantize_threads": threads if gguf_jobs else None}
         if quick_fingerprint(inp["uri"]) != before:
             raise PipelineError(ExitCode.VERIFY, "E_INPUT_MUTATED", f"Quantization input {inp['uri']} changed during stage 08 (immutability violated)")
         if inter is not None and not config.get("quantization.gguf.keep_intermediate"):

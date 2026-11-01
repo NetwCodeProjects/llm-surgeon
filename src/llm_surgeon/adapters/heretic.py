@@ -157,8 +157,11 @@ def build_optimize_config(
     trial_index: int,
     save_directory: str,
     checkpoint_action: str,
+    max_batch_size: int | None = None,
 ) -> dict[str, Any]:
     native = copy.deepcopy(template)
+    if max_batch_size is not None:
+        native["max_batch_size"] = int(max_batch_size)
     startup = n_startup_trials if n_startup_trials is not None else native.get("n_startup_trials", 30)
     startup = min(int(startup), max(1, n_trials // 3)) if n_startup_trials is None else int(startup)
     native.update(

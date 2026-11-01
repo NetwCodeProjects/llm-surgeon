@@ -355,3 +355,62 @@ Measurements taken on the same Pod after the run (raw logs: `../b300-evidence/`,
 
 A manual vLLM start without the tool venv's `bin/` on PATH failed (`No such file or directory: 'ninja'`): the
 JIT needs the activation the pipeline already applies (Step 6).
+
+## 2026-11-01 — Performance from the B300 evidence; Step 7 acceptance tooling
+
+Approved scope (no new inference engines): five evidence-backed performance changes, configuration keys
+for the two batch sizes, the `mtp.*` graft as the `qwen3_5` default, the acceptance record, and this
+documentation refresh. Stage timings below are from the B300 2B run (`20261031T213438Z-60805f`).
+
+| Change | Evidence | Now |
+|---|---|---|
+| One `llama-server` per GGUF export in stage 09 | 32 `llama-completion` processes took ~76 s of stage 09; each ~2.3 s, of which ~40 ms generating | `adapters/llama_server.py`; the image test keeps `llama-mtmd-cli` |
+| vLLM, FlashInfer, Triton and inductor caches in `<cache_root>` | cold start 279.1 s, warm 63.9 s; caches were in `/root/.cache` | `VLLM_CACHE_ROOT`, `FLASHINFER_WORKSPACE_BASE`, `TRITON_CACHE_DIR`, `TORCHINDUCTOR_CACHE_DIR` in every tool environment |
+| `quantization.fp8.vllm_enforce_eager` (default true) | first CUDA graph took 56 s, then 5–7 s per capture, for ~14 prompts | recorded as a `runtime` contract gap |
+| `llama-quantize` threads from `available_cpus` | it received `os.cpu_count()` = 344 in a ~36-CPU cgroup (finding 31 fixed only the build) | split between concurrent GGUF jobs |
+| Parallel hashing (up to 8 threads) | 1.25 GB/s on one core, 9.54 GB/s on 8 | stages 02, 07, 08, 09 |
+| Parallel stage 08 (`quantization.parallel`, operational) | FP8 27 s and the GGUF chain 74 s ran in sequence with the GPU idle | FP8 beside GGUF; GGUF types side by side after the shared intermediate |
+| `abliteration.max_batch_size`, `evaluation.batch_size` | Heretic's own test on the B300: 64 → 2548 tokens/s, 128 → 5007 tokens/s, "Chosen batch size: 128" (the template cap) | measured on the 27B after the acceptance record (docs/acceptance.md) |
+
+Findings:
+
+34. **`llama-server` is equivalent to the `llama-completion -f` path** (real, CPU, WSL; the pinned `d854d98`
+    built with `-DLLAMA_BUILD_SERVER=ON`; Qwen3.5-0.8B BF16 GGUF): five rendered prompts, including a literal
+    `a\nb`, gave byte-identical text, stop reasons and prompt token counts (`--verbose-prompt` vs
+    `tokens_evaluated`). Five CLI processes took 104.9 s; one server 14.9 s to load plus 6.9 s for all
+    five. `/health` answered 503 while loading, then 200; SIGTERM ended it with exit 0. The source confirms
+    the same tokenization call shape (`tokenize_input_prompts(..., true, true)`) and EOG stop
+    (`STOP_TYPE_EOS`). The server is started with `-np 1` (one slot, no batching across prompts) and
+    `cache_prompt: false`. The pipeline's own client (`adapters/llama_server.py`, same binary and GGUF)
+    waited through the 503s (20.3 s load), returned `" Paris"` / `stop` / 24 prompt tokens for the rendered
+    prompt and `length` for a raw prompt at its token limit, and stopped the server with exit 0.
+35. **The server's port is picked by binding port 0 and releasing it**, so another process can take it
+    first; the server then logs "couldn't bind HTTP server socket" (`server-http.cpp`) and exits before
+    loading. Only that message triggers a retry on a new port (twice at most).
+36. **Stage 08 jobs share state across threads**: the run index (`artifacts.json`) is a read-modify-write,
+    now under a lock; the GGUF intermediate is built once under a lock and a failure is shared with the
+    other GGUF jobs instead of retried by each. `Interrupted` subclasses `PipelineError`, so the job wrapper
+    re-raises it before recording failures; without that an interrupt became a "failed" format and the
+    stage went on (caught while writing the acceptance procedure; regression test added).
+37. **The fake tools' call counters raced** once stage 08 ran them concurrently (read, increment, write);
+    they now append one line per call. Test fixtures only.
+38. **FlashInfer's cache location** is `FLASHINFER_WORKSPACE_BASE/.cache/flashinfer`
+    (`flashinfer/jit/env.py` in flashinfer-python 0.7.0.post1, the version vLLM 0.32.0 installed on the
+    B300). vLLM's own caches (`torch_compile_cache`, `flashinfer_autotune_cache`) were under
+    `/root/.cache/vllm` (warm-start log), which `VLLM_CACHE_ROOT` moves.
+39. **Runs did not record which code ran.** Preflight now stores `code: {version, git_commit, git_dirty}`
+    (`git_dirty` ignores untracked files); the acceptance record needs it.
+40. **`mtp.*` graft by default**: the `qwen3_5` profile sets `selection.graft_missing_source_tensors: ['mtp.']`
+    (approved 2026-10-31); `configs/pipeline.yaml` no longer sets `[]`, which would have overridden it.
+
+Step 7: `configs/acceptance/b300.yaml` (the B200 file of the spec is the same config; CUDA architectures
+are resolved from the GPU), `docs/acceptance.md` (procedure, checks, commands), `scripts/acceptance_record.py`
+(stdlib; passed/failed/unresolved per check, measurements, provenance). The script was developed against
+the real B300 2B workspace (`../b300-evidence/`): on it the record correctly says `not accepted` (no
+budget stop, no interruption, wrong model for `--expect-model Qwen/Qwen3.8-27B`, no git commit recorded).
+`tests/integration/test_acceptance_record.py` builds a record from a mocked acceptance run (two setups, a
+1-minute budget stop, a kill after the export was saved, a resume).
+
+Not verified on a GPU: `llama-server` with CUDA, parallel stage 08 with the real tools, the start-up time
+with `enforce_eager` and with a warm workspace cache, the batch-size effect on the 27B. The acceptance run
+covers all four.

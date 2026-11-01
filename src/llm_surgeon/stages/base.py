@@ -72,6 +72,11 @@ class StageContext:
     def redact(self) -> bool:
         return bool(self.config.get("logging.redact_prompts"))
 
+    @property
+    def hash_workers(self) -> int:
+        """Threads for hashing many files: usable CPUs, at most the 8 measured on a B300 (7.7x one core)."""
+        return max(1, min(8, self.run.probe.available_cpus()))
+
     @contextmanager
     def generation_dir(self, name: str) -> Iterator[Path]:
         """Where a generation step writes its spec, raw output, prompt files and tool logs.

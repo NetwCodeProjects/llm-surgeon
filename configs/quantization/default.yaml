@@ -2,6 +2,7 @@
 # Formats are verified against the pinned toolchains; unsupported names are rejected at load time.
 quantization:
   formats: [fp8, iq4_xs, iq3_s]
+  parallel: true                     # FP8 beside GGUF, GGUF types side by side (operational)
   fp8:
     scheme: auto                     # auto = fp8_block (FP8 E4M3 weights, 128x128 block scales, dynamic activations)
     calibration_manifest: null       # data-free schemes only in v1
@@ -13,6 +14,7 @@ quantization:
     vllm_version: 0.32.0
     vllm_max_model_len: 8192
     vllm_gpu_memory_utilization: 0.85
+    vllm_enforce_eager: true         # no CUDA-graph capture for the dozen stage 09 prompts (contract gap recorded)
   gguf:
     llama_cpp_revision: null         # null = verified tag b11889
     build_cuda: auto                 # CUDA build when nvcc is present (B200: sm_100)

@@ -75,6 +75,7 @@ first (`E_GATE_REQUIREMENT_MISSING`).
 | `abliteration.heretic_config` | string\|null | `null` |  | Native Heretic TOML template; null uses configs/heretic/<experiment>.toml. |
 | `abliteration.max_trials` | integer | `50` |  | Heretic n_trials (optimize). |
 | `abliteration.n_startup_trials` | integer\|null | `null` |  | Heretic n_startup_trials; null = min(template value, max_trials//3). |
+| `abliteration.max_batch_size` | integer\|null | `null` |  | Heretic max_batch_size, the cap for its batch-size auto-tuning; null keeps the template value (128). Part of the study identity: a change starts a new study. |
 | `abliteration.max_runtime_minutes` | integer\|null | `180` | yes | Wall-clock budget for the search; on expiry the search stops and selection uses the completed trials. |
 | `abliteration.shutdown_grace_minutes` | integer | `90` | yes | Time allowed for an export-only invocation (load, restore, merge, save) and for stopping a search. |
 | `abliteration.seed` | integer\|null | `null` |  | Heretic seed; null generates one and records it. |
@@ -97,6 +98,7 @@ first (`E_GATE_REQUIREMENT_MISSING`).
 | `evaluation.extended_correctness` | boolean | `false` |  |  |
 | `evaluation.enable_thinking` | boolean | `false` |  | Chat-template thinking mode during qualification. |
 | `evaluation.max_new_tokens` | integer | `256` |  |  |
+| `evaluation.batch_size` | integer | `8` |  | Prompts per transformers generate() call in qualification and the comparison baseline. Padding differs with the batch, so a change re-runs both. |
 | `evaluation.seed` | integer | `0` |  |  |
 | `evaluation.refusal_markers` | array | `["i can't", "i cannot", "i can not", "i won't", "i will n...` |  |  |
 | `evaluation.comparison.enabled` | boolean | `true` |  | Stage 09: run the comparison suite on the baseline (master, or source for quantize-only) and on every export. |
@@ -126,6 +128,7 @@ first (`E_GATE_REQUIREMENT_MISSING`).
 | `quantization.input` | string (selected_master\|source\|path) | `"selected_master"` |  |  |
 | `quantization.input_path` | string\|null | `null` |  |  |
 | `quantization.formats` | array | `["fp8", "iq4_xs", "iq3_s"]` |  |  |
+| `quantization.parallel` | boolean | `true` | yes | Run the FP8 job beside the GGUF jobs, and the GGUF types concurrently once their shared intermediate exists; llama-quantize threads are split between them. false runs one format at a time (less peak RAM and disk I/O). |
 | `quantization.fp8.scheme` | string (auto\|fp8_block\|fp8_dynamic) | `"auto"` |  |  |
 | `quantization.fp8.calibration_manifest` | string\|null | `null` |  | Not used by the data-free schemes offered in v1; setting it is an error. |
 | `quantization.fp8.ignore` | array | `["lm_head", "re:.*embed_tokens$", "re:.*visual\\..*", "re...` |  | Architecture-specific additions come from model profiles (configs/profiles/). |
@@ -137,6 +140,7 @@ first (`E_GATE_REQUIREMENT_MISSING`).
 | `quantization.fp8.vllm_version` | string | `"0.32.0"` |  |  |
 | `quantization.fp8.vllm_max_model_len` | integer | `8192` |  |  |
 | `quantization.fp8.vllm_gpu_memory_utilization` | number | `0.85` |  |  |
+| `quantization.fp8.vllm_enforce_eager` | boolean | `true` |  | Start vLLM with enforce_eager for the stage 09 check: no CUDA-graph capture for a dozen prompts (the first graph took 56 s on a B300). Recorded as a contract gap, since a server with vLLM defaults runs compiled. |
 | `quantization.gguf.llama_cpp_repo` | string | `"https://github.com/ggml-org/llama.cpp.git"` |  |  |
 | `quantization.gguf.llama_cpp_revision` | string\|null | `null` |  | null uses the verified pin b11889. |
 | `quantization.gguf.build_cuda` | string (auto\|on\|off) | `"auto"` |  |  |

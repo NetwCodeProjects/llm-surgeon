@@ -224,6 +224,7 @@ def fake_component_records(config, probe: HostProbe) -> dict[str, ComponentRecor
                 "llama-imatrix": llama("imatrix"),
                 "llama-completion": llama("completion"),
                 "llama-mtmd-cli": llama("mtmd"),
+                "llama-server": llama("server"),
             },
             versions={"commit": configspec.LLAMA_CPP_PINNED_COMMIT, "gguf": "0.19.0"},
             build={"cuda": False},
@@ -315,7 +316,7 @@ class Env:
 
     def count(self, tool: str) -> int:
         path = self.counters / f"{tool}.count"
-        return int(path.read_text()) if path.exists() else 0
+        return len(path.read_text().splitlines()) if path.exists() else 0
 
     def latest_run(self) -> Path:
         runs = sorted((self.workspace / "runs").iterdir(), key=lambda p: p.stat().st_mtime)
@@ -343,6 +344,7 @@ def env(tmp_path, monkeypatch) -> Env:
         "FAKE_KL_STEP",
         "FAKE_DEGRADE",
         "FAKE_BASELINE_FAIL",
+        "FAKE_SERVER_FAIL",
     ):
         monkeypatch.delenv(var, raising=False)
     return Env(tmp_path, monkeypatch)

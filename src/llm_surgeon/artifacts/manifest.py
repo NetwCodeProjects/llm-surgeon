@@ -9,6 +9,7 @@ inference and evaluation status is derived from them on every write.
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
@@ -116,6 +117,7 @@ class ArtifactRegistry:
         self.index_path = run_dir / "artifacts.json"
         self.global_dir = workspace / "manifests"
         self.report_dir = run_dir / "reports" / "manifests"
+        self._index_lock = threading.Lock()  # stage 08 registers formats from parallel threads
 
     def _load(self) -> dict[str, Any]:
         return read_json(self.index_path) if self.index_path.exists() else {"artifacts": {}}
@@ -155,9 +157,10 @@ class ArtifactRegistry:
         manifest_path = path.with_name(path.name + ".manifest.json") if sidecar else self.global_dir / f"{artifact_id}.json"
         with self._artifact_lock(artifact_id):
             written = self._write(manifest, role, manifest_path)
-        data = self._load()
-        data["artifacts"][role] = {"artifact_id": artifact_id, "path": str(path), "manifest": str(manifest_path), "stage": stage_id}
-        atomic_write_json(self.index_path, data)
+        with self._index_lock:
+            data = self._load()
+            data["artifacts"][role] = {"artifact_id": artifact_id, "path": str(path), "manifest": str(manifest_path), "stage": stage_id}
+            atomic_write_json(self.index_path, data)
         return written
 
     def attach(self, role: str, record: dict[str, Any]) -> dict[str, Any]:
@@ -188,7 +191,8 @@ class ArtifactRegistry:
 
     def import_from(self, other_index: Path) -> None:
         if other_index.exists():
-            data = self._load()
-            for role, entry in read_json(other_index)["artifacts"].items():
-                data["artifacts"].setdefault(role, entry)
-            atomic_write_json(self.index_path, data)
+            with self._index_lock:
+                data = self._load()
+                for role, entry in read_json(other_index)["artifacts"].items():
+                    data["artifacts"].setdefault(role, entry)
+                atomic_write_json(self.index_path, data)

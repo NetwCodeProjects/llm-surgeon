@@ -129,7 +129,7 @@ class AcquireStage(Stage):
                 hint="Point --model-path at a Hugging Face-format checkpoint directory.",
             )
         ctx.info(f"Hashing local model {path} (this reads every file once)")
-        files = [e.to_dict() for e in file_inventory(path)]
+        files = [e.to_dict() for e in file_inventory(path, workers=ctx.hash_workers)]
         summary = dtype_summary(tensor_map(path))
         manifest = build_manifest(
             run_id=ctx.run.run_id,

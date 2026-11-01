@@ -216,6 +216,14 @@
           "description": "Heretic n_startup_trials; null = min(template value, max_trials//3).",
           "minimum": 0
         },
+        "max_batch_size": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Heretic max_batch_size, the cap for its batch-size auto-tuning; null keeps the template value (128). Part of the study identity: a change starts a new study.",
+          "minimum": 1
+        },
         "max_runtime_minutes": {
           "type": [
             "integer",
@@ -467,6 +475,12 @@
           "type": "integer",
           "minimum": 1,
           "default": 256
+        },
+        "batch_size": {
+          "type": "integer",
+          "description": "Prompts per transformers generate() call in qualification and the comparison baseline. Padding differs with the batch, so a change re-runs both.",
+          "minimum": 1,
+          "default": 8
         },
         "seed": {
           "type": "integer",
@@ -742,6 +756,11 @@
             "iq3_s"
           ]
         },
+        "parallel": {
+          "type": "boolean",
+          "description": "Run the FP8 job beside the GGUF jobs, and the GGUF types concurrently once their shared intermediate exists; llama-quantize threads are split between them. false runs one format at a time (less peak RAM and disk I/O).",
+          "default": true
+        },
         "fp8": {
           "type": "object",
           "properties": {
@@ -815,6 +834,11 @@
               "minimum": 0.1,
               "maximum": 0.99,
               "default": 0.85
+            },
+            "vllm_enforce_eager": {
+              "type": "boolean",
+              "description": "Start vLLM with enforce_eager for the stage 09 check: no CUDA-graph capture for a dozen prompts (the first graph took 56 s on a B300). Recorded as a contract gap, since a server with vLLM defaults runs compiled.",
+              "default": true
             }
           },
           "additionalProperties": false

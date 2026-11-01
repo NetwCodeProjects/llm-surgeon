@@ -18,7 +18,7 @@ Stage IDs and names are stable public contracts. Every executed stage writes
 
 | ID | Name | Depends on | Inputs | Outputs | Gate |
 |---|---|---|---|---|---|
-| 00 | preflight | — | host | `metrics/preflight.json` | Linux; GPU if GPU components needed; free disk ≥ `min_free_disk_gb`; capability findings (below); warnings for ECC/ephemeral storage. **Always re-run.** |
+| 00 | preflight | — | host | `metrics/preflight.json` (host facts, usable CPUs, nvcc targets, and the code version and git commit that run) | Linux; GPU if GPU components needed; free disk ≥ `min_free_disk_gb`; capability findings (below); warnings for ECC/ephemeral storage. **Always re-run.** |
 | 01 | environment | 00 | profile, pins | `tools/components.json`, `metrics/components.json` | host prerequisites satisfied (or guarded installs succeeded); every needed component validated *now* (imports, `heretic --help`, CUDA matmul unless `torch_backend=cpu`) |
 | 02 | acquire | 00 | model ref | source record + manifest, reproduce.json, prefetched pinned datasets, imatrix text | commit SHA resolved; every file sha256 / git-blob verified; source read-only |
 | 03 | published_baselines | 02 | baseline YAML | `metrics/published_baselines.json` | provenance fields present; zero inference |
@@ -26,8 +26,8 @@ Stage IDs and names are stable public contracts. Every executed stage writes
 | 05 | abliterate | 04 | engine plan | `models/candidates/<run>/<cand>/`, `metrics/candidate.json`, `metrics/heretic_study.json` | checkpoint written (config.json + all indexed shards); exit code not trusted |
 | 06 | qualify | 05 | candidate | `metrics/qualification.json` | reload + generations completed (gates are applied in 07) |
 | 07 | select_master | 05, 06 | gates | `exports/<precision>/<name>/` + manifest, `metrics/selection.json`, promotion assessment record | decision table outcome is `promoted:*` (qualified, research or ungated; docs/evaluation.md) |
-| 08 | quantize | 01 (fp8/llama_cpp), 07 *or* 02 | master/source/path | `exports/fp8/…`, `exports/gguf/…` + manifests, `receipts/08-quantize/<fmt>.json` | each format succeeds independently; input fingerprint unchanged |
-| 09 | verify_exports | 01, 02, 07?, 08? | registered artifacts | `metrics/verification.json`, `metrics/comparison.json`, verification and comparison assessment records (manifests re-derived from them) | re-hash matches; loader smoke tests (failures → partial; an FP8 test on a GPU without native FP8 is recorded as not representative and leaves `inference_passed` null); master vs export comparison is report-only unless `selection.export_gates.mode: enforce` ([assessments](assessments.md)) |
+| 08 | quantize | 01 (fp8/llama_cpp), 07 *or* 02 | master/source/path | `exports/fp8/…`, `exports/gguf/…` + manifests, `receipts/08-quantize/<fmt>.json` | each format succeeds independently (concurrently with `quantization.parallel`); input fingerprint unchanged |
+| 09 | verify_exports | 01, 02, 07?, 08? | registered artifacts | `metrics/verification.json`, `metrics/comparison.json`, verification and comparison assessment records (manifests re-derived from them) | re-hash matches (files hashed on up to 8 threads); loader smoke tests, one `llama-server` per GGUF export for its loader and comparison prompts (failures → partial; an FP8 test on a GPU without native FP8 is recorded as not representative and leaves `inference_passed` null); master vs export comparison is report-only unless `selection.export_gates.mode: enforce` ([assessments](assessments.md)) |
 | 10 | report_export | 09 | everything | `reports/{report.md,run-summary.json,manifest-index.json}` | — |
 
 ## Restart and invalidation rules

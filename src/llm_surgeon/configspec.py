@@ -214,6 +214,14 @@ SPEC = S(
                 "n_startup_trials": F(
                     "integer", None, nullable=True, minimum=0, description="Heretic n_startup_trials; null = min(template value, max_trials//3)."
                 ),
+                "max_batch_size": F(
+                    "integer",
+                    None,
+                    nullable=True,
+                    minimum=1,
+                    description="Heretic max_batch_size, the cap for its batch-size auto-tuning; null keeps the template value (128). "
+                    "Part of the study identity: a change starts a new study.",
+                ),
                 "max_runtime_minutes": F(
                     "integer",
                     180,
@@ -289,6 +297,13 @@ SPEC = S(
                 "extended_correctness": F("boolean", False),
                 "enable_thinking": F("boolean", False, description="Chat-template thinking mode during qualification."),
                 "max_new_tokens": F("integer", 256, minimum=1),
+                "batch_size": F(
+                    "integer",
+                    8,
+                    minimum=1,
+                    description="Prompts per transformers generate() call in qualification and the comparison baseline. "
+                    "Padding differs with the batch, so a change re-runs both.",
+                ),
                 "seed": F("integer", 0),
                 "refusal_markers": F("array", list(DEFAULT_REFUSAL_MARKERS), items=F("string")),
                 "comparison": S(
@@ -375,6 +390,13 @@ SPEC = S(
                 "input": F("string", "selected_master", enum=("selected_master", "source", "path")),
                 "input_path": F("string", None, nullable=True),
                 "formats": F("array", ["fp8", "iq4_xs", "iq3_s"], items=F("string")),
+                "parallel": F(
+                    "boolean",
+                    True,
+                    operational=True,
+                    description="Run the FP8 job beside the GGUF jobs, and the GGUF types concurrently once their shared intermediate "
+                    "exists; llama-quantize threads are split between them. false runs one format at a time (less peak RAM and disk I/O).",
+                ),
                 "fp8": S(
                     {
                         "scheme": F("string", "auto", enum=("auto", "fp8_block", "fp8_dynamic")),
@@ -401,6 +423,12 @@ SPEC = S(
                         "vllm_version": F("string", VLLM_VERSION),
                         "vllm_max_model_len": F("integer", 8192, minimum=256),
                         "vllm_gpu_memory_utilization": F("number", 0.85, minimum=0.1, maximum=0.99),
+                        "vllm_enforce_eager": F(
+                            "boolean",
+                            True,
+                            description="Start vLLM with enforce_eager for the stage 09 check: no CUDA-graph capture for a dozen prompts "
+                            "(the first graph took 56 s on a B300). Recorded as a contract gap, since a server with vLLM defaults runs compiled.",
+                        ),
                     }
                 ),
                 "gguf": S(

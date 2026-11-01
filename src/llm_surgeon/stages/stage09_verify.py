@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from ..adapters import llama_cpp as LC
+from ..adapters.llama_server import LlamaServer, LlamaServerError
 from ..artifacts import assessments as A
 from ..artifacts.gguf_meta import read_metadata
 from ..artifacts.manifest import PROCESSOR_FILES, TOKENIZER_FILES
@@ -136,6 +137,7 @@ class VerifyExportsStage(Stage):
         "quantization.fp8.verify_backend",
         "quantization.fp8.vllm_max_model_len",
         "quantization.fp8.vllm_gpu_memory_utilization",
+        "quantization.fp8.vllm_enforce_eager",
         "quantization.gguf.smoke_context",
         "quantization.gguf.smoke_gpu_layers",
         "execution.allow_partial_exports",
@@ -144,6 +146,7 @@ class VerifyExportsStage(Stage):
         "evaluation.heldout_refusal_prompts",
         "evaluation.enable_thinking",
         "evaluation.refusal_markers",
+        "evaluation.batch_size",
         "selection.export_gates",
         "logging.redact_prompts",
         "model.trust_remote_code",
@@ -261,6 +264,8 @@ class VerifyExportsStage(Stage):
                 "--out",
                 str(out),
             ]
+            if config.get("quantization.fp8.vllm_enforce_eager"):
+                argv.append("--enforce-eager")
             if suite:
                 suite_file = work / "comparison-suite.json"
                 atomic_write_json(suite_file, [{"id": s["id"], "rendered": s["rendered"]} for s in suite])
@@ -289,6 +294,7 @@ class VerifyExportsStage(Stage):
             **self._texts(outputs[:3], ctx.redact),
             "error": data.get("error"),
             "load_seconds": data.get("load_seconds"),
+            "enforce_eager": data.get("enforce_eager"),
             "suite_rows": [{**r, "kind": kinds.get(r["id"], "benign")} for r in suite_rows] if suite and suite_rows is not None else None,
         }
 
@@ -296,46 +302,73 @@ class VerifyExportsStage(Stage):
         layers = ctx.config.get("quantization.gguf.smoke_gpu_layers")
         return ("all" if record.build.get("cuda") else "0") if layers == "auto" else layers
 
-    def _smoke_gguf(self, ctx: StageContext, art_dir: Path) -> dict[str, Any]:
+    def _gguf_runs(self, ctx: StageContext, art_dir: Path, suite: list[dict[str, Any]] | None) -> tuple[dict[str, Any], list[dict[str, Any]] | None]:
+        """Loader smoke test and, with ``suite``, the comparison prompts as rendered by the baseline, all through one
+        llama-server (one model load). The image test runs separately with llama-mtmd-cli.
+
+        The suite rows are None when the model did not load or a request failed."""
         config = ctx.config
         record = ctx.run.components(ctx.log_dir).get("llama_cpp")
         ggufs = sorted(art_dir.glob("*.gguf"))
         mmproj = next((p for p in ggufs if is_projector(p)), None)
         model = next((p for p in ggufs if not is_projector(p)), None)
         if model is None:
-            return {"ran": False, "reason": "no model gguf"}
+            return {"ran": False, "reason": "no model gguf"}, None
         layers = self._gguf_layers(ctx, record)
         ctxlen = config.get("quantization.gguf.smoke_context")
         timeout = float(config.get("quantization.gguf.smoke_timeout_minutes")) * 60
-        samples, ok = [], True
-        with ctx.generation_dir(f"gguf-smoke-{art_dir.name}") as work:
-            for i, prompt in enumerate(config.get("quantization.smoke_prompts")):
-                res = ctx.run.runner.run(
-                    LC.completion_argv(record.cmd("llama-completion"), model, prompt, config.get("quantization.smoke_max_tokens"), ctxlen, layers),
-                    cwd=None,
-                    env=ctx.run.tool_env(record),
-                    log_dir=work,
-                    name=f"gguf-smoke-{art_dir.name}-{i}",
-                    timeout_seconds=timeout,
-                )
-                if res.interrupted:
-                    raise Interrupted()
-                text = Path(res.stdout_log).read_text(encoding="utf-8", errors="replace").split("\n", 1)[-1]
-                generated = text.split(prompt, 1)[-1].strip() if prompt in text else text.strip()
-                samples.append(generated[:500])
-                if not res.ok or not generated or integrity_issues(generated, include_thinking=True):
-                    ok = False
+        threads = ctx.run.probe.available_cpus()
+        samples: list[str] = []
+        rows: list[dict[str, Any]] | None = None
+        error = None
+        with ctx.generation_dir(f"gguf-{art_dir.name}") as work:
+            server = LlamaServer(
+                ctx.run.runner,
+                record.cmd("llama-server"),
+                model,
+                ctx=ctxlen,
+                gpu_layers=layers,
+                threads=threads,
+                env=ctx.run.tool_env(record),
+                log_dir=work,
+                name=f"llama-server-{art_dir.name}",
+                timeout_seconds=timeout,
+                interrupt_event=ctx.run.interrupt_event,
+            )
+            ok = False
+            try:
+                with server:
+                    ok = True
+                    for prompt in config.get("quantization.smoke_prompts"):
+                        generated = server.complete(prompt, config.get("quantization.smoke_max_tokens"))["response"].strip()
+                        samples.append(generated[:500])
+                        if not generated or integrity_issues(generated, include_thinking=True):
+                            ok = False
+                    if suite:
+                        rows = []
+                        for item in suite:
+                            out = server.complete(item["rendered"], config.get("evaluation.comparison.max_new_tokens"))
+                            rows.append(
+                                {"id": item["id"], "kind": item["kind"], **{k: out[k] for k in ("response", "finish_reason", "prompt_tokens", "new_tokens")}}
+                            )
+            except LlamaServerError as exc:
+                ok, rows, error = False, None, str(exc)
+                ctx.warn(f"{art_dir.name}: {exc}")
             result = {
                 "ran": True,
                 "passed": ok,
                 "backend": "llama.cpp",
                 "backend_revision": f"llama.cpp {record.versions.get('commit')}",
                 "versions": record.versions,
+                "runtime": "llama-server",
+                "load_seconds": server.load_seconds,
                 "tested_context": ctxlen if ok else None,
                 "gpu_layers": layers,
                 "modalities": ["text"] if ok else [],
                 **self._texts(samples, ctx.redact),
             }
+            if error:
+                result["error"] = error
             if mmproj is not None:
                 image = work / "smoke-red-square.png"
                 tiny_png(image)
@@ -347,52 +380,14 @@ class VerifyExportsStage(Stage):
                     name=f"gguf-mtmd-{art_dir.name}",
                     timeout_seconds=timeout,
                 )
-                out = Path(res.stdout_log).read_text(encoding="utf-8", errors="replace")
-                image_ok = res.ok and bool(out.strip().splitlines()[1:] if out.strip() else False)
-                result["image_test"] = {"passed": image_ok, "mentions_red": "red" in out.lower(), "returncode": res.returncode}
-                if image_ok and ok:
-                    result["modalities"].append("image")
-        return result
-
-    def _suite_gguf(self, ctx: StageContext, art_dir: Path, suite: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
-        """The comparison prompts through llama-completion as rendered by the baseline (one process per prompt).
-
-        Returns None when the model did not load or a generation failed."""
-        config = ctx.config
-        record = ctx.run.components(ctx.log_dir).get("llama_cpp")
-        model = next((p for p in sorted(art_dir.glob("*.gguf")) if not is_projector(p)), None)
-        if model is None:
-            return None
-        layers = self._gguf_layers(ctx, record)
-        timeout = float(config.get("quantization.gguf.smoke_timeout_minutes")) * 60
-        rows = []
-        with ctx.generation_dir(f"gguf-comparison-{art_dir.name}") as work:
-            for i, item in enumerate(suite):
-                prompt_file = work / f"comparison-{i}.txt"
-                atomic_write_bytes(prompt_file, (item["rendered"] + "\n").encode("utf-8"))  # -f drops one trailing newline
-                res = ctx.run.runner.run(
-                    LC.rendered_completion_argv(
-                        record.cmd("llama-completion"),
-                        model,
-                        prompt_file,
-                        config.get("evaluation.comparison.max_new_tokens"),
-                        config.get("quantization.gguf.smoke_context"),
-                        layers,
-                    ),
-                    cwd=None,
-                    env=ctx.run.tool_env(record),
-                    log_dir=work,
-                    name=f"gguf-comparison-{art_dir.name}-{i}",
-                    timeout_seconds=timeout,
-                )
                 if res.interrupted:
                     raise Interrupted()
-                if not res.ok:
-                    return None
-                stdout = Path(res.stdout_log).read_text(encoding="utf-8", errors="replace").split("\n", 1)[-1]  # first line: runner header
-                response, finish = LC.generated_text(stdout)
-                rows.append({"id": item["id"], "kind": item["kind"], "response": response, "finish_reason": finish})
-        return rows
+                out_text = Path(res.stdout_log).read_text(encoding="utf-8", errors="replace")
+                image_ok = res.ok and bool(out_text.strip().splitlines()[1:] if out_text.strip() else False)
+                result["image_test"] = {"passed": image_ok, "mentions_red": "red" in out_text.lower(), "returncode": res.returncode}
+                if image_ok and ok:
+                    result["modalities"].append("image")
+        return result, rows
 
     # ------------------------------------------------------------------ comparison
     def _baseline(self, ctx: StageContext, spec: dict[str, Any]) -> dict[str, Any]:
@@ -414,6 +409,7 @@ class VerifyExportsStage(Stage):
                         "heldout_limit": spec["heldout_limit"],
                         "extended_kl": False,
                         "max_new_tokens": spec["max_new_tokens"],
+                        "batch_size": config.get("evaluation.batch_size"),
                         "enable_thinking": spec["enable_thinking"],
                         "seed": 0,
                         "trust_remote_code": config.get("model.trust_remote_code"),
@@ -467,6 +463,15 @@ class VerifyExportsStage(Stage):
         backend = smoke.get("backend") or ("vllm" if role == "export:fp8" else "llama.cpp")
         limit = ctx.config.get("quantization.fp8.vllm_max_model_len") if backend == "vllm" else ctx.config.get("quantization.gguf.smoke_context")
         gaps = C.backend_gaps(backend, limit, contract["context"]["required_tokens"])
+        if backend == "vllm" and smoke.get("enforce_eager"):
+            gaps.append(
+                {
+                    "field": "runtime",
+                    "detail": "vLLM ran with enforce_eager (no CUDA graphs); a server with vLLM defaults runs compiled kernels, "
+                    "whose floating-point results can differ slightly",
+                    "basis": "quantization.fp8.vllm_enforce_eager",
+                }
+            )
         if smoke.get("representative") is False:
             gaps.append(
                 {
@@ -532,7 +537,7 @@ class VerifyExportsStage(Stage):
         prompts = ctx.config.get("quantization.smoke_prompts")
         contract = None
         if ran_here:
-            template = {"vllm": "vLLM chat (the model's template)", "llama.cpp": "none: raw prompt (-no-cnv)"}.get(
+            template = {"vllm": "vLLM chat (the model's template)", "llama.cpp": "none: raw prompt (llama-server /completion)"}.get(
                 smoke.get("backend"), "transformers apply_chat_template"
             )
             contract = {
@@ -567,7 +572,7 @@ class VerifyExportsStage(Stage):
         expected = {f["relative_path"]: f for f in manifest["artifact"]["files"]}
         problems = []
         if config.get("storage.rehash_on_verify"):
-            actual = {e.relative_path: e for e in file_inventory(art_dir)}
+            actual = {e.relative_path: e for e in file_inventory(art_dir, workers=ctx.hash_workers)}
             for rel, f in expected.items():
                 got = actual.get(rel)
                 if got is None:
@@ -637,9 +642,7 @@ class VerifyExportsStage(Stage):
                 smoke = self._smoke_fp8(ctx, str(art_dir), suite)
                 suite_rows = smoke.pop("suite_rows", None)
             else:
-                smoke = self._smoke_gguf(ctx, art_dir)
-                if suite:
-                    suite_rows = self._suite_gguf(ctx, art_dir, suite)
+                smoke, suite_rows = self._gguf_runs(ctx, art_dir, suite)
             item["integrity_problems"] = problems
             item["smoke"] = {k: v for k, v in smoke.items() if k != "versions"}
             report[role] = item
@@ -666,6 +669,11 @@ class VerifyExportsStage(Stage):
                 scored = C.score(None, cmp["spec"], False, ctx.redact, f"export runtime did not run ({smoke.get('reason')})")
             else:
                 scored = C.score(suite_rows or [], cmp["spec"], suite_rows is not None, ctx.redact)
+                tokens = C.prompt_token_check(suite, suite_rows)
+                if tokens is not None:
+                    scored["prompt_tokens"] = tokens
+                    if tokens["mismatches"]:
+                        ctx.warn(f"{role}: {len(tokens['mismatches'])} of {tokens['compared']} prompts tokenized to a different length than the baseline")
             record = self._export_record(ctx, role, manifest["artifact_id"], cmp, smoke, scored)
             compared[role] = {
                 "artifact_id": manifest["artifact_id"],
