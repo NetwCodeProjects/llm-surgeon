@@ -103,3 +103,21 @@ def test_a_clean_setup_and_a_wrong_model_are_judged(tmp_path):
     assert module.setup_check(None, "tool_reuse", "t", "reused")["result"] == "unresolved"
     wrong = module.full_size_check(view, "Qwen/Qwen3.8-27B")
     assert wrong["result"] == "failed" and wrong["detail"] == "the run used Qwen/Qwen3.5-2B, not Qwen/Qwen3.8-27B"
+
+
+def test_an_export_runtime_switched_off_by_configuration_is_listed_not_failed(tmp_path):
+    run = tmp_path / "ws" / "runs" / "r1"
+    (run / "metrics").mkdir(parents=True)
+    off = "export not measured (export runtime did not run (verify_backend=none))"
+    doc = {
+        "baseline": {"role": "master", "measured": True},
+        "exports": {"export:fp8": {"outcome": "unmeasured", "unmeasured_reason": off}, "export:gguf:q4_k_m": {"outcome": "passed"}},
+    }
+    (run / "metrics" / "comparison.json").write_text(json.dumps(doc))
+    view = module.RunView(tmp_path / "ws", "r1")
+    local = module.comparison_check(view, strict=False)
+    assert local["result"] == "passed" and "switched off by configuration on this host: ['export:fp8']" in local["detail"]
+    assert module.comparison_check(view, strict=True)["result"] == "failed", "the release record accepts no unmeasured export"
+    doc["exports"]["export:fp8"]["unmeasured_reason"] = "export not measured (did not load)"
+    (run / "metrics" / "comparison.json").write_text(json.dumps(doc))
+    assert module.comparison_check(view, strict=False)["result"] == "failed", "only a runtime switched off by configuration is excused"

@@ -253,15 +253,24 @@ def loading_check(view: RunView, strict: bool = True) -> dict[str, Any]:
     return check("export_loading", title, "failed" if bad else "passed", detail, [str(view.dir / "metrics" / "verification.json")], exports=rows)
 
 
-def comparison_check(view: RunView) -> dict[str, Any]:
+def comparison_check(view: RunView, strict: bool = True) -> dict[str, Any]:
+    """``strict``: every export must pass. Without it (local acceptance on a CPU host) an export whose runtime is
+    switched off by configuration (``verify_backend=none``) is necessarily unmeasured; it is listed, not failed."""
     title = "Master/export comparison (stage 09)"
     doc = view.metric("comparison.json")
     if doc is None:
         return check("comparison", title, "unresolved", "no metrics/comparison.json (comparison disabled or no exports)")
-    outcomes = {role: e.get("outcome") for role, e in doc.get("exports", {}).items()}
+    exports = doc.get("exports", {})
+    outcomes = {role: e.get("outcome") for role, e in exports.items()}
+    off = sorted(
+        r for r, e in exports.items() if not strict and e.get("outcome") == "unmeasured" and "verify_backend=none" in (e.get("unmeasured_reason") or "")
+    )
+    judged = {r: o for r, o in outcomes.items() if r not in off}
     base = doc.get("baseline") or {}
-    ok = bool(base.get("measured")) and bool(outcomes) and all(o == "passed" for o in outcomes.values())
+    ok = bool(base.get("measured")) and bool(judged) and all(o == "passed" for o in judged.values())
     detail = f"baseline {base.get('role')} measured={base.get('measured')}; " + ", ".join(f"{r} {o}" for r, o in sorted(outcomes.items()))
+    if off:
+        detail += f"; runtime switched off by configuration on this host: {off}"
     return check("comparison", title, "passed" if ok else "failed", detail, [str(view.dir / "metrics" / "comparison.json")], outcomes=outcomes)
 
 
@@ -391,7 +400,7 @@ def build_record(
             resume_check(view),
             promotion_check(view),
             loading_check(view, strict=False),
-            comparison_check(view),
+            comparison_check(view, strict=False),
             *extra,
         ]
     elif kind == "release":

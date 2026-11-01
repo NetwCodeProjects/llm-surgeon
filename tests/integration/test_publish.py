@@ -101,3 +101,15 @@ def test_publish_flags_need_each_other(env):
         with pytest.raises(SystemExit) as usage:  # argparse usage error
             env.run(*args)
         assert usage.value.code == ExitCode.USAGE
+
+
+def test_a_fork_that_drops_a_format_neither_verifies_nor_publishes_it(env):
+    parent = ready_run(env)
+    code, out = env.run("--resume", parent, "--fork", "--quantizations", "q4_k_m")
+    assert code == 0, out
+    fork = max((p for p in (env.workspace / "runs").iterdir() if p.name != parent), key=lambda p: p.name).name
+    verification = json.loads((env.workspace / "runs" / fork / "metrics" / "verification.json").read_text())
+    assert sorted(verification) == ["export:gguf:q4_k_m", "master"], "the parent's FP8 export is not the fork's"
+    code, out = env.run("--publish", fork, "--hf-namespace", "tester")
+    assert code == 0, out
+    assert "Qwen3.8-27B-abliterated-GGUF " in out and "Qwen3.8-27B-abliterated-FP8" not in out

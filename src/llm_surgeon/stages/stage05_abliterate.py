@@ -128,10 +128,17 @@ class AbliterateStage(Stage):
         cand_tensors = tensor_map(final)
         diff = tensor_diff(source_tensors, cand_tensors)
         if diff["missing_count"]:
-            ctx.warn(
-                f"Candidate lacks {diff['missing_count']} source tensors (prefixes {diff['missing_prefixes']}); "
-                "see selection.graft_missing_source_tensors to restore them verbatim"
-            )
+            graft = tuple(run.config.get("selection.graft_missing_source_tensors") or ())
+            if graft and all(any(f"{p}." == g or p.startswith(g) for g in graft) for p in diff["missing_prefixes"]):
+                ctx.info(
+                    f"Candidate lacks {diff['missing_count']} source tensors (prefixes {diff['missing_prefixes']}); "
+                    f"stage 07 restores them from the source (selection.graft_missing_source_tensors: {list(graft)})"
+                )
+            else:
+                ctx.warn(
+                    f"Candidate lacks {diff['missing_count']} source tensors (prefixes {diff['missing_prefixes']}); "
+                    "see selection.graft_missing_source_tensors to restore them verbatim"
+                )
         candidate = {
             "candidate_id": final.name,
             "path": str(final),

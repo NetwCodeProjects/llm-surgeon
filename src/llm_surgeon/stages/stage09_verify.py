@@ -25,7 +25,7 @@ from ..evaluation.qualification import integrity_issues
 from ..fsutil import atomic_write_json, file_inventory, read_json, sha256_file, sha256_obj, sha256_text
 from .base import Stage, StageContext
 from .stage06_qualify import run_generation_script
-from .stage08_quantize import input_role, is_projector
+from .stage08_quantize import configured_export_roles, input_role, is_projector
 
 PRESERVED = TOKENIZER_FILES + PROCESSOR_FILES + ("generation_config.json",)
 
@@ -618,7 +618,8 @@ class VerifyExportsStage(Stage):
 
     def execute(self, ctx: StageContext) -> None:
         run, config = ctx.run, ctx.config
-        roles = {r: e for r, e in run.registry.roles().items() if r == "master" or r.startswith("export:")}
+        wanted = configured_export_roles(config.get("quantization.formats")) if config.get("quantization.enabled") else set()
+        roles = {r: e for r, e in run.registry.roles().items() if r == "master" or r in wanted}
         if not roles:
             raise PipelineError(ExitCode.VERIFY, "E_NOTHING_TO_VERIFY", "No master or exports are registered for this run")
         source_dir = Path(run.registry.get("source")["manifest_data"]["artifact"]["uri"])

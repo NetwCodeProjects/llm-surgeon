@@ -28,6 +28,8 @@ and lineage, so downstream consumers (Project B) never need to import this code.
 | verify_exports | 09 | Re-hash, preservation checks, real loader tests (vLLM for FP8, one `llama-server` per GGUF), master vs export comparison |
 | report_export | 10 | Manifests, run summary, report, usage examples |
 
+Each stage step by step, with what it writes and what stops it: [docs/run-walkthrough.md](docs/run-walkthrough.md).
+
 Pinned, verified upstream versions (see [docs/implementation-log.md](docs/implementation-log.md)):
 Heretic `171bb98b` (master; ARA + headless mode exist only after v1.4.0), llama.cpp `b11889`,
 llm-compressor `0.14.0.1`, vLLM `0.32.0`.
@@ -141,7 +143,7 @@ actually tested), gates, metric provenance, tool versions and measured time.
 
 ## Documentation
 
-[architecture](docs/architecture.md) · [stages](docs/stages.md) · [cli](docs/cli.md) ·
+[run walkthrough](docs/run-walkthrough.md) · [architecture](docs/architecture.md) · [stages](docs/stages.md) · [cli](docs/cli.md) ·
 [configuration](docs/configuration.md) · [Lambda](docs/deployment-lambda.md) · [Ubuntu](docs/deployment-ubuntu.md) ·
 [Heretic adapter](docs/heretic-adapter.md) · [study lifecycle](docs/study-lifecycle.md) · [quantization](docs/quantization.md) · [evaluation](docs/evaluation.md) · [assessments](docs/assessments.md) ·
 [artifact schema](docs/artifact-schema.md) · [security](docs/security-and-trust.md) · [troubleshooting](docs/troubleshooting.md) ·

@@ -46,6 +46,16 @@ def is_projector(path: Path) -> bool:
     return kv.get("general.architecture") == "clip" or kv.get("general.type") == "mmproj"
 
 
+def export_role(fmt: str) -> str:
+    return "export:fp8" if fmt == "fp8" else f"export:gguf:{fmt}"
+
+
+def configured_export_roles(formats) -> set[str]:
+    """The export roles a run's own configuration produces. A fork imports its parent's artifacts, so formats
+    the fork dropped must not be verified or published as the fork's exports."""
+    return {export_role(f) for f in formats or []}
+
+
 def input_role(config) -> str:
     choice = config.get("quantization.input")
     return {"selected_master": "master", "source": "source", "path": "quant_input"}[choice]

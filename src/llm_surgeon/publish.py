@@ -32,6 +32,7 @@ from .artifacts.manifest import ArtifactRegistry
 from .environment.components import ComponentManager, find_uv
 from .errors import ExitCode, PipelineError
 from .fsutil import atomic_write_json, file_inventory, git_blob_sha1, read_json, remove_tree, sha256_obj
+from .stages.stage08_quantize import configured_export_roles
 from .subprocesses import CommandRunner, child_env
 from .telemetry import EventLogger, Redactor, utc_now
 
@@ -154,10 +155,12 @@ def build_plan(workspace: Path, run_id: str, namespace: str, name: str | None) -
     base = name or f"{facts['source']['repo'].split('/')[-1]}-abliterated"
     base_repo = f"{namespace}/{base}"
     repos: dict[str, dict[str, Any]] = {}
+    quant = view.config.get("quantization") or {}
+    wanted = configured_export_roles(quant.get("formats")) if quant.get("enabled") else set()
     for role in sorted(artifacts):
         kind = repo_kind(role)
-        if kind is None:
-            continue
+        if kind is None or (kind != "master" and role not in wanted):
+            continue  # an export this run's configuration does not produce (inherited by a fork)
         repo = repos.setdefault(kind, {"repo_id": f"{base_repo}{SUFFIX[kind]}", "kind": kind, "roles": [], "artifact_ids": [], "files": {}})
         manifest = artifacts[role]["manifest"]
         repo["roles"].append(role)

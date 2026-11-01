@@ -71,10 +71,12 @@ def test_qwen3_5_profile_restores_mtp_tensors_by_default(env):
     assert code == 0, out
     master = json.loads(Path(env.artifacts(env.latest_run())["master"]["manifest"]).read_text())
     assert master["extensions"]["tensor_diff_vs_source"]["missing_count"] == 0
+    assert not any("Candidate lacks" in w for w in env.receipt(env.latest_run(), "05")["warnings"]), "no warning when stage 07 restores them"
     code, out = env.run("--quantizations", "fp8", "--new-run", "--set", "selection.graft_missing_source_tensors=[]")
     assert code == 0, out
     master = json.loads(Path(env.artifacts(env.latest_run())["master"]["manifest"]).read_text())
     assert master["extensions"]["tensor_diff_vs_source"]["missing_prefixes"] == {"mtp": 2}, "opting out records the gap"
+    assert any("Candidate lacks 2 source tensors" in w for w in env.receipt(env.latest_run(), "05")["warnings"])
 
 
 def test_vllm_caches_and_batch_sizes_reach_the_tools(env):
