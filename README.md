@@ -24,19 +24,28 @@ and lineage, so downstream consumers (Project B) never need to import this code.
 | abliterate | 05 | Budgeted, resumable headless Heretic run → candidate checkpoint |
 | qualify | 06 | Reload + held-out refusal / benign / integrity checks (optimizer metrics labelled separately) |
 | select_master | 07 | Gates → immutable master (actual precision recorded) |
-| quantize | 08 | FP8 / GGUF exports, each an independent resumable job |
-| verify_exports | 09 | Re-hash, preservation checks, real loader smoke tests |
+| quantize | 08 | FP8 / GGUF exports, each an independent resumable job (run concurrently by default) |
+| verify_exports | 09 | Re-hash, preservation checks, real loader tests (vLLM for FP8, one `llama-server` per GGUF), master vs export comparison |
 | report_export | 10 | Manifests, run summary, report, usage examples |
 
 Pinned, verified upstream versions (see [docs/implementation-log.md](docs/implementation-log.md)):
 Heretic `171bb98b` (master; ARA + headless mode exist only after v1.4.0), llama.cpp `b11889`,
 llm-compressor `0.14.0.1`, vLLM `0.32.0`.
 
+## Status
+
+Every stage has run end to end with Qwen3.5-2B on a B300 (Runpod, 2026-10-31), including native FP8 in
+vLLM and a CUDA `sm_103` llama.cpp build; an earlier A100 run (Lambda, 2026-10-29) found the environment
+issues fixed since. Version 1.0.0 is
+tagged once the bounded Qwen3.8-27B acceptance run ([docs/acceptance.md](docs/acceptance.md)) produces an
+`accepted` record; until then nothing is claimed for the 27B model. What is and is not verified is listed
+in [docs/limitations.md](docs/limitations.md).
+
 ## Requirements
 
 - Ubuntu 22.04/24.04 (Lambda Stack image or plain Ubuntu). `--help` and `--dry-run` also work elsewhere.
 - Python ≥ 3.10. Either `uv`, or `python3-venv` for the hash-locked bootstrap. PyYAML (`python3-yaml`, preinstalled on most Ubuntu images) for `--dry-run` before bootstrapping.
-- NVIDIA GPU + driver for Heretic / FP8 / vLLM (one B200 is the reference target). GGUF-only quantization works on CPU.
+- NVIDIA GPU + driver for Heretic / FP8 / vLLM (one B200 or B300 is the reference target; native FP8 checks need compute capability ≥ 8.9, an A100 runs a recorded, non-representative fallback). GGUF-only quantization works on CPU.
 - git, cmake, a C++ compiler for the llama.cpp build (stage 01 can `apt-get` them with `environment.allow_system_packages: true` + `--yes`).
 - Disk: roughly 3–4× the BF16 model size for the full Qwen3.8-27B pipeline (≈ 55 GB source, candidate, GGUF intermediate, exports). Preflight and acquire check real numbers.
 
@@ -65,6 +74,19 @@ export HF_TOKEN=...                       # optional for public repos; never wri
 The ARA reference (`coder3101/Qwen3.8-27B-heretic-ara`) can only be reproduced **approximately**; see
 [examples/qwen-b200.yaml](examples/qwen-b200.yaml) and [docs/heretic-adapter.md](docs/heretic-adapter.md).
 
+### One B300 on Runpod
+
+```bash
+export WS=/root/ws                        # the container (root) disk: faster than a network volume, wiped when the Pod stops
+./main.sh --output-dir $WS --setup-only --yes
+./main.sh --output-dir $WS --yes
+aws s3 cp --recursive $WS/exports s3://<bucket>/exports   # copy results out before stopping the Pod
+```
+
+The `runpod/pytorch` CUDA 13.2 image works: its nvcc (in `/usr/local/cuda`, off the SSH PATH; the
+pipeline finds it) can target the B300's `sm_103`. The acceptance procedure is in
+[docs/acceptance.md](docs/acceptance.md).
+
 ### Plain Ubuntu
 
 ```bash
@@ -92,13 +114,14 @@ More in [docs/cli.md](docs/cli.md) and [examples/resume.md](examples/resume.md).
 
 ```text
 workspace/
-├── cache/{hf,uv}                         HF cache (verified, read-only source blobs) and uv cache
+├── cache/{hf,uv,vllm,flashinfer,…}       HF cache (verified, read-only source blobs), uv cache, kernel compile caches
 ├── tools/{components.json,envs,heretic,llama.cpp}
 ├── models/source/<org>--<name>/<sha>.json   verified source records (+ link to the snapshot)
 ├── models/candidates/<run>/<candidate>/     Heretic exports
 ├── models/selected/<run>/master.json        pointer to the promoted master
 ├── models/gguf-intermediate/                re-creatable conversion intermediates
 ├── manifests/<artifact_id>.json             every manifest ever produced
+├── assessments/<artifact_id>/               append-only verification, comparison and promotion records
 ├── exports/{bf16,fp8,gguf}/<name>/          deliverables (+ <name>.manifest.json sidecars)
 └── runs/<run>/{logs,receipts,configs,metrics,checkpoints,reports}/
 ```
@@ -112,7 +135,7 @@ actually tested), gates, metric provenance, tool versions and measured time.
 [configuration](docs/configuration.md) · [Lambda](docs/deployment-lambda.md) · [Ubuntu](docs/deployment-ubuntu.md) ·
 [Heretic adapter](docs/heretic-adapter.md) · [study lifecycle](docs/study-lifecycle.md) · [quantization](docs/quantization.md) · [evaluation](docs/evaluation.md) · [assessments](docs/assessments.md) ·
 [artifact schema](docs/artifact-schema.md) · [security](docs/security-and-trust.md) · [troubleshooting](docs/troubleshooting.md) ·
-[limitations](docs/limitations.md) · [implementation log](docs/implementation-log.md) · [original specification](docs/PROJECT_A_AGENT_HANDOFF.md)
+[limitations](docs/limitations.md) · [acceptance](docs/acceptance.md) · [implementation log](docs/implementation-log.md) · [original specification](docs/PROJECT_A_AGENT_HANDOFF.md)
 
 ## Development
 
@@ -121,7 +144,8 @@ uv sync --frozen            # or ./main.sh --bootstrap --yes, then .venv/bin/pip
 .venv/bin/python -m pytest  # CPU-only unit + mocked integration tests
 python scripts/generate_schema.py --check
 REALTOOLS_WS=/tmp/ws python tests/realtools/provision_cpu.py && REALTOOLS_WS=/tmp/ws pytest -m realtools tests/realtools
-pytest -m gpu tests/gpu     # on the B200 only
+pytest -m gpu tests/gpu     # on a B200; other GPUs need GPU_ALLOW_OTHER=1
+python3 scripts/acceptance_record.py --workspace WS --run RUN --setup-run A --reuse-run B   # docs/acceptance.md
 ```
 
 Project B (coding-capability research) is intentionally **not** part of this repository.
