@@ -54,11 +54,21 @@ says `"model_type": "qwen3_5"`. For a model with a different `model_type`, write
 To find which profile a model needs, open its `config.json`
 (`https://huggingface.co/<org>/<model>/blob/main/config.json`) and read `model_type`.
 
+## Changing the model
+
+In `configs/pipeline.yaml`:
+
+```text
+model.url:                       org/model on Hugging Face
+model.revision:                  a commit of that repository, or null for the latest
+profiles:                        the profile for its model_type
+evaluation.published_baselines:  null, unless you have that model's published numbers
+```
+
 ## Usage
 
 ```text
 Review:   configs/pipeline.yaml
-Model:    configs/pipeline.yaml/model.url, model.revision (null = latest commit)
 Preview:  ./main.sh --dry-run
 Run:      ./main.sh --yes
 Resume:   ./main.sh --resume RUN_ID
@@ -72,8 +82,6 @@ Help:     ./main.sh --help
 public without asking. With `enabled: ask`, a new run asks first (`--yes` does not answer it): publish or
 not, repository name, private or public, the formats by bit level. Uploads happen only when the run's
 release record says `ready` ([release](docs/release.md)).
-
-Another model: set `evaluation.published_baselines: null` unless you have that model's published numbers.
 
 Cloud GPU: workspace on the local disk (`--output-dir /root/ws`), run inside `tmux`, copy `exports/` out
 before the instance stops.
