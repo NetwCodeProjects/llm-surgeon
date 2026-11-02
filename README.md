@@ -41,6 +41,7 @@ package is reported with its install command.
 
 ```text
 Review:   configs/pipeline.yaml
+Model:    configs/pipeline.yaml/model.url, model.revision (null = latest commit)
 Preview:  ./main.sh --dry-run
 Run:      ./main.sh --yes
 Resume:   ./main.sh --resume RUN_ID
@@ -54,6 +55,10 @@ Help:     ./main.sh --help
 public without asking. With `enabled: ask`, a new run asks first (`--yes` does not answer it): publish or
 not, repository name, private or public, the formats by bit level. Uploads happen only when the run's
 release record says `ready` ([release](docs/release.md)).
+
+Another model: a different architecture needs its own profile in `configs/profiles/` (the shipped
+`qwen3_5.yaml` covers Qwen3.5 and Qwen3.8); set `evaluation.published_baselines: null` unless you have that
+model's published numbers.
 
 Cloud GPU: workspace on the local disk (`--output-dir /root/ws`), run inside `tmux`, copy `exports/` out
 before the instance stops.
