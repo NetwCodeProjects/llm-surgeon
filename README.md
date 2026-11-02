@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/LLM-Surgeon-Logo.png" alt="LLM Surgeon" width="640"></p>
+
 # LLM Surgeon (Abliterate and Quantize)
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue)](pyproject.toml)
