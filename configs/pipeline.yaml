@@ -112,7 +112,7 @@ execution:
   hourly_rate_usd: null              # e.g. 4.99 to get a clearly-labelled cost estimate
 
 storage:
-  root: ./workspace                  # put this on durable storage (e.g. a Lambda filesystem) if you need it later
+  root: ./workspace                  # cloud GPU: --output-dir /root/ws (local disk; copy exports/ out before it stops)
   retain_intermediate: true
   artifact_checksums: sha256
   link_strategy: auto                # hardlink master files from the candidate when possible
