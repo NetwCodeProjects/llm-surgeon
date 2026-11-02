@@ -109,7 +109,7 @@ class TrialWatch:
             self._refusals = None
             self.done.append((self.trial, refusals, prompts, kl))
             self.last_done = self.clock()
-            self.milestone(f"trial {self.trial}: {refusals}/{prompts} refusals, KL {kl:.3f}" + (" ✓ usable" if self.usable(refusals, prompts, kl) else ""))
+            self.milestone(f"trial {self.trial}: {refusals}/{prompts} refusals, KL {kl:.4g}" + (" ✓ usable" if self.usable(refusals, prompts, kl) else ""))
             self.report(self.status)
         elif m := RE_RESTORE.search(text):
             self.report(f"exporting trial {m.group(1)}")
@@ -136,13 +136,13 @@ class TrialWatch:
         usable = [d for d in self.done if self.usable(d[1], d[2], d[3])]
         if usable:
             trial, refusals, prompts, kl = min(usable, key=lambda d: (d[1] / d[2], d[3]))
-            return f"best usable: trial {trial} ({refusals}/{prompts}, KL {kl:.3f})"
+            return f"best usable: trial {trial} ({refusals}/{prompts}, KL {kl:.4g})"
 
         def distance(d):  # how far the trial is outside the gates, as a multiple of each gate
             return max(d[1] / d[2] / self.max_refusal_rate if self.max_refusal_rate else 0, d[3] / self.max_kl if self.max_kl else 0)
 
         trial, refusals, prompts, kl = min(self.done, key=distance)
-        return f"none usable yet (closest: {refusals}/{prompts}, KL {kl:.3f})"
+        return f"none usable yet (closest: trial {trial}, {refusals}/{prompts}, KL {kl:.4g})"
 
     def status(self) -> str:
         parts = [f"trial {self.trial}/{self.planned}", self.eta(), self.best()]

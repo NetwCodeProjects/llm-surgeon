@@ -570,3 +570,16 @@ single redrawn line carries the one or two facts that change):
   printed, and the live line shows bytes sent and files committed.
 - `HF_HUB_DISABLE_PROGRESS_BARS=1` in the control process (huggingface_hub 2.3.0's snapshot bars go through
   its tqdm wrapper, which honours it).
+
+## 2026-11-02 — Using the closest trial
+
+The owner asked how to use the trial the live line calls closest. The live line now names it ("closest:
+trial 28, 1/25, KL 0.1004"); KL is shown with four significant digits, since three decimals printed 0.1004
+as "0.100", which reads as inside the 0.1 gate. `E_NO_ELIGIBLE_TRIAL`'s hint now gives the commands: the
+closest Pareto-front trial (only those can be exported) is used by a fork that raises the gate it misses to
+its value rounded up (`--set selection.max_optimizer_kl=0.101`); that re-runs selection and export with zero
+new trials (stage 05's selection keys), the policy picks the best trial that then passes, and stage 07
+promotes under that threshold, which the run, the release record and the model card record. A manual
+`--trial-id` is not offered: it exports the trial but stage 07 still fails the gate it misses. Tested end to
+end with the fake engine (`tests/integration/test_no_eligible_trial.py`). docs/release.md still says a failed
+gate is not overridden for the official release; raising it there is the owner's call.

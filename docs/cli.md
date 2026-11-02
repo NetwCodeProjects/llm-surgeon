@@ -57,7 +57,7 @@ Run 20261102T052210Z-4bc6eb (new)
 [02 acquire]           ok          1.0s  Qwen/Qwen3.5-0.8B @ 2fc0636 · 1.7 GB verified
 [03 published_baselines] skipped        evaluation.published_baselines not set
 [04 prepare_engine]    ok         10.2s  optimize · ARA · seed 154518560
-[05 abliterate] 29:38 · trial 10/200 · ~15m left (budget) · none usable yet (closest: 1/25, KL 0.104)
+[05 abliterate] 29:38 · trial 10/200 · ~15m left (budget) · none usable yet (closest: trial 8, 1/25, KL 0.1004)
 ```
 
 - **The live line** (terminal only) is redrawn once a second: elapsed time and what the stage is doing. In

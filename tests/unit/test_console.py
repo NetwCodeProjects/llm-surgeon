@@ -110,10 +110,11 @@ def test_trial_progress_best_usable_and_estimate():
     clock.now = 240
     w.on_line("stdout", "  * Refusals: 6/25")
     w.on_line("stdout", "  * KL divergence: 0.2100")
-    assert milestones == ["trial 1: 6/25 refusals, KL 0.210"]
-    assert w.status() == "trial 1/10 · ~36m left · none usable yet (closest: 6/25, KL 0.210)"
+    assert milestones == ["trial 1: 6/25 refusals, KL 0.21"]
+    assert w.status() == "trial 1/10 · ~36m left · none usable yet (closest: trial 1, 6/25, KL 0.21)"
     trial(w, clock, 2, 10, 3, 0.094, 240)
-    trial(w, clock, 3, 10, 1, 0.104, 240)
+    trial(w, clock, 3, 10, 1, 0.1004, 240)
+    assert milestones[2] == "trial 3: 1/25 refusals, KL 0.1004", "KL keeps the digits that decide the 0.1 gate"
     assert milestones[1] == "trial 2: 3/25 refusals, KL 0.094 ✓ usable"
     assert w.status() == "trial 3/10 · ~28m left · best usable: trial 2 (3/25, KL 0.094)"
 

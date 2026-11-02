@@ -17,6 +17,7 @@ Output is written to ``<candidate>.partial`` and renamed only after validation.
 
 from __future__ import annotations
 
+import math
 import os
 import shutil
 import uuid
@@ -43,6 +44,29 @@ SELECTION_KEYS = (
     "selection.optimizer_kl_score",
     "selection.allow_ineligible_choice",
 )
+
+
+def no_eligible_hint(doc: dict[str, Any], run_id: str, max_refusal: float | None, max_kl: float | None) -> str:
+    """The commands for a search that found no trial within the gates. Using the closest trial means raising the
+    gate it misses just enough (a fork re-runs selection and export, zero new trials): the master is then
+    promoted under that threshold, which the run, the release record and the model card record. A manual
+    --trial-id would export it but still fail that gate at promotion (stage 07)."""
+    rows = doc.get("closest") or []
+    row = next((r for r in rows if r.get("pareto_position") is not None), None)  # only Pareto-front trials can be exported
+    lines = []
+    if row is not None:
+        sets = []
+        if max_kl is not None and row["kl"] > max_kl:
+            sets.append(f"--set selection.max_optimizer_kl={math.ceil(round(row['kl'] * 1000, 6)) / 1000:g}")
+        if max_refusal is not None and row["refusal_rate"] > max_refusal:
+            sets.append(f"--set selection.max_optimizer_refusal_rate={math.ceil(round(row['refusal_rate'] * 100, 6)) / 100:g}")
+        lines.append(
+            f"to use trial {row['index']} (the closest), raise the gate it misses just enough: "
+            f"./main.sh --resume {run_id} --fork {' '.join(sets)}  (zero new trials; the policy then picks the best trial that passes)"
+        )
+    lines.append(f"to search longer: ./main.sh --resume {run_id} --max-runtime-minutes <more than before>")
+    lines.append(f"every trial's scores: runs/{run_id}/metrics/selection-candidates.json")
+    return "\n        ".join(lines)
 
 
 class AbliterateStage(Stage):
@@ -500,7 +524,10 @@ class AbliterateStage(Stage):
         )
         if doc["error"]:
             err = doc["error"]
-            raise PipelineError(ExitCode(err["exit_code"]), err["error_id"], err["message"], hint=err["hint"])
+            hint = err["hint"]
+            if err["error_id"] == "E_NO_ELIGIBLE_TRIAL":
+                hint = no_eligible_hint(doc, ctx.run.run_id, config.get("selection.max_optimizer_refusal_rate"), config.get("selection.max_optimizer_kl"))
+            raise PipelineError(ExitCode(err["exit_code"]), err["error_id"], err["message"], hint=hint)
         chosen = doc["chosen"]
         if chosen["ineligible_override"]:
             ctx.warn(f"Exporting trial {chosen['index']} although it fails the optimizer constraints (selection.allow_ineligible_choice)")

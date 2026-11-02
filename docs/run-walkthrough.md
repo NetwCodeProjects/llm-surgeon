@@ -159,7 +159,8 @@ model's behaviour on harmless prompts the least; llm-surgeon decides which trial
    point is reconciled on resume without repeating trials.
 3. **Select:** among completed trials, keep those within the optimizer gates (refusal rate ≤ 0.2, KL ≤ 0.1);
    the policy `min_refusals_within_kl` picks the one with the fewest refusals. No eligible trial stops the
-   run (`E_NO_ELIGIBLE_TRIAL`, exit 9).
+   run (`E_NO_ELIGIBLE_TRIAL`, exit 9); the error names the closest trial (the live line shows it during the
+   search too) and gives the commands to use it or to search longer.
 4. **Export only:** Heretic runs again, restores that trial and saves the merged model, with zero new trials
    (checked against the study before and after).
 5. **Candidate:** checks the saved checkpoint (config and every indexed shard), compares its tensors with the
