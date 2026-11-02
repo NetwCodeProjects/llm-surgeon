@@ -2,7 +2,7 @@
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.10-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL2-lightgrey?logo=linux&logoColor=white)](docs/deployment-ubuntu.md)
+[![Platform](https://img.shields.io/badge/Ubuntu-22.04%20%7C%2024.04-E95420?logo=ubuntu&logoColor=white)](docs/deployment-ubuntu.md)
 [![GPU verified](https://img.shields.io/badge/GPU%20verified-B300%20%7C%20A100-76B900?logo=nvidia&logoColor=white)](docs/limitations.md)
 [![Last commit](https://img.shields.io/github/last-commit/NetwCodeProjects/llm-surgeon)](https://github.com/NetwCodeProjects/llm-surgeon/commits/main)
 
@@ -13,11 +13,10 @@
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-A reproducible, configuration-first CLI platform that takes a user-selected Hugging Face model through
-**abliteration** (with the [Heretic](https://github.com/p-e-w/heretic) engine), **lightweight
-qualification**, preservation of an immutable **master checkpoint**, and **deployment quantization**
-(FP8 via llm-compressor, GGUF via llama.cpp). Every artifact gets a versioned manifest with checksums
-and lineage, so downstream consumers (Project B) never need to import this code.
+Abliterates a Hugging Face model with [Heretic](https://github.com/p-e-w/heretic), qualifies the result,
+keeps it as an immutable BF16 master and exports FP8 (llm-compressor) and GGUF (llama.cpp), each loaded and
+compared with the master before it counts. Optionally publishes to Hugging Face. Every artifact has a
+manifest with checksums and lineage.
 
 > **Compatibility notice.** This platform does not automatically verify that your model architecture
 > is supported by the selected abliteration engine or quantization backend. Verify compatibility with
@@ -25,167 +24,101 @@ and lineage, so downstream consumers (Project B) never need to import this code.
 > model loading, transformation, or export. The platform manages execution, dependencies, logs, and
 > artifacts but does not guarantee compatibility with every model.
 
-## What it does
+## Requirements
 
-| Stage | ID | Result |
+```text
+OS:    Ubuntu 22.04/24.04, or a cloud GPU's PyTorch template (e.g. runpod/pytorch)
+GPU:   NVIDIA with driver; small models also run on CPU (configs/acceptance/local-cpu.yaml)
+Disk:  3–4× the model's BF16 size (the 27B release plans 500 GB)
+```
+
+The tools are installed by the program, pinned, inside the repository and the workspace. A missing host
+package is reported with its install command.
+
+## Usage
+
+```text
+Review:   configs/pipeline.yaml
+Preview:  ./main.sh --dry-run
+Run:      ./main.sh --yes
+Resume:   ./main.sh --resume RUN_ID
+Publish:  ./main.sh --publish RUN_ID
+Help:     ./main.sh --help
+```
+
+![The welcome screen of ./main.sh: banner, version, detected GPU, and the next actions](docs/images/start.png)
+
+`--yes` skips confirmation prompts. It never answers the publishing question a new run asks first:
+publish or not, repository name, private or public, and the formats by bit level. Uploads happen only when
+the run's release record says `ready` ([release](docs/release.md)).
+
+Cloud GPU: workspace on the local disk (`--output-dir /root/ws`), run inside `tmux`, copy `exports/` out
+before the instance stops.
+
+```text
+Stop early:     ./main.sh --through 2 --yes
+Re-run stages:  ./main.sh --resume RUN_ID --from 5 --through 6 --rerun
+Change config:  ./main.sh --resume RUN_ID --fork --quantizations fp8
+Quantize only:  ./main.sh --model-url org/model --quantize-only --quantizations fp8,q4_k_m --yes
+Inspect:        ./main.sh --status RUN_ID · --list-runs · --cleanup
+Detail:         --verbose · --quiet
+```
+
+## Stages
+
+| ID | Stage | Result |
 |---|---|---|
-| preflight | 00 | OS/GPU/driver/RAM/disk facts, profile detection (Lambda Stack vs Ubuntu), disk & VRAM warnings |
-| environment | 01 | Pinned, validated tool environments (Heretic, llm-compressor, vLLM, llama.cpp build) |
-| acquire | 02 | Model revision pinned to a commit SHA, sha256-verified download, immutable source manifest |
-| published_baselines | 03 | Model-card metrics with provenance — **no** reference-model inference |
-| prepare_engine | 04 | Native Heretic config generated and validated against the *installed* Heretic |
-| abliterate | 05 | Budgeted, resumable headless Heretic run → candidate checkpoint |
-| qualify | 06 | Reload + held-out refusal / benign / integrity checks (optimizer metrics labelled separately) |
-| select_master | 07 | Gates → immutable master (actual precision recorded) |
-| quantize | 08 | FP8 / GGUF exports, each an independent resumable job (run concurrently by default) |
-| verify_exports | 09 | Re-hash, preservation checks, real loader tests (vLLM for FP8, one `llama-server` per GGUF), master vs export comparison |
-| report_export | 10 | Manifests, run summary, report, usage examples |
+| 00 | preflight | host facts, disk and VRAM checks |
+| 01 | environment | pinned tool environments (reused across runs) |
+| 02 | acquire | model at a pinned commit, every file verified |
+| 03 | published_baselines | the model card's own metrics, recorded with their source |
+| 04 | prepare_engine | Heretic configuration, validated against the installed Heretic |
+| 05 | abliterate | budgeted, resumable search; the best trial within the gates is exported |
+| 06 | qualify | held-out refusal, benign and integrity checks on the candidate |
+| 07 | select_master | promotion gates → immutable master |
+| 08 | quantize | FP8 and GGUF exports |
+| 09 | verify_exports | each export loaded in its runtime (vLLM, llama-server) and compared with the master |
+| 10 | report_export | manifests, report, run summary |
 
-Each stage step by step, with what it writes and what stops it: [docs/run-walkthrough.md](docs/run-walkthrough.md).
-
-Pinned, verified upstream versions (see [docs/implementation-log.md](docs/implementation-log.md)):
-Heretic `171bb98b` (master; ARA + headless mode exist only after v1.4.0), llama.cpp `b11889`,
-llm-compressor `0.14.0.1`, vLLM `0.32.0`.
+Step by step: [run walkthrough](docs/run-walkthrough.md).
 
 ## Status
 
-Every stage has run end to end with Qwen3.5-2B on a B300 (Runpod, 2026-10-31), including native FP8 in
-vLLM and a CUDA `sm_103` llama.cpp build; an earlier A100 run (Lambda, 2026-10-29) found the environment
-issues fixed since. Each commit is accepted locally first: a real run of Qwen3.5-0.8B on a CPU
-([docs/acceptance.md](docs/acceptance.md)). The release is one Qwen3.8-27B run on a B300, published only if
-its release record says `ready` ([docs/release.md](docs/release.md)). What is and is not verified is listed
-in [docs/limitations.md](docs/limitations.md).
-
-## Requirements
-
-**You provide** (each is checked; a missing one stops the run with the command that installs it):
-
-| Prerequisite | Why / notes |
-|---|---|
-| Ubuntu 22.04/24.04 (a workstation, WSL2, or a cloud GPU's PyTorch template) | other distributions are untested; `--help` and `--dry-run` run anywhere with Python |
-| Python ≥ 3.10 with `venv` (`python3-venv`), or `uv` | to create `.venv`; minimal Ubuntu images lack `python3-venv` |
-| git, cmake, `build-essential` | clone Heretic, build llama.cpp. With `environment.allow_system_packages: true` the run installs them itself (`sudo apt-get`) |
-| NVIDIA GPU + driver | real models (the reference is one B200/B300; native FP8 needs compute capability ≥ 8.9). Never installed by the program. Small models run on CPU (`environment.torch_backend: cpu`, as in [the acceptance config](configs/acceptance/local-cpu.yaml)), without the FP8 loader test |
-| CUDA toolkit (`nvcc`), optional | CUDA build of llama.cpp; without it llama.cpp is built for CPU |
-| Disk | about 3–4× the model's BF16 size plus tens of GB for tool environments and caches (the 27B release plans 500 GB); preflight checks it |
-| Network | PyPI, GitHub and Hugging Face |
-| Hugging Face write token, optional | only to publish; public models download without one |
-
-**The program installs** (pinned, inside the repository and the workspace; nothing system-wide):
-
-- `.venv`: the control packages from a hash-locked lock file, including its own `uv` and the `hf` command.
-- Stage 01: one environment per tool (torch, transformers, Heretic, llm-compressor, vLLM) and the llama.cpp build
-  and converter, reused by later runs.
-- The model and datasets at pinned commits, verified file by file.
-
-`--dry-run` before `.venv` exists needs PyYAML (`python3-yaml`, preinstalled on most Ubuntu images).
-
-## Quick start (Ubuntu)
-
-```bash
-sudo apt-get install -y git cmake build-essential python3-venv   # once; everything else is installed by the program
-git clone https://github.com/NetwCodeProjects/llm-surgeon.git && cd llm-surgeon
-./main.sh                     # welcome screen: banner, detected GPU, where to start
-./main.sh --dry-run           # zero side effects: plan, components, disk estimate
-./main.sh --yes               # the run, as configs/pipeline.yaml says (model, budget, formats); edit it first
-```
-
-![The welcome screen of ./main.sh: the LLM Surgeon banner, version, the detected GPU, and where to start (review the config, preview with --dry-run, help, run with --yes)](docs/images/start.png)
-
-The first `./main.sh --yes` creates `.venv` and installs the tool environments (stage 01, a few minutes; reused
-afterwards). `--yes` acknowledges the compatibility notice and the downloads; without it the run asks on a
-terminal and refuses (exit 15) without one. It never answers the publishing question.
-
-### On a cloud GPU
-
-Start from the provider's **PyTorch template** (Ubuntu with the NVIDIA driver, the CUDA toolkit, Python, git
-and build tools), for example Runpod's `runpod/pytorch`. The program does not use the image's PyTorch: it
-installs pinned versions in its own environments. Put the workspace on the instance's local disk and copy
-the results out before you stop it. These steps ran on a B300 with runpod/pytorch (CUDA 13.2):
-
-```bash
-git clone https://github.com/NetwCodeProjects/llm-surgeon.git && cd llm-surgeon
-export WS=/root/ws                        # the container disk: faster than a network volume, wiped when the Pod stops
-tmux new -s run                           # a dropped SSH connection does not end the run
-./main.sh --output-dir $WS --yes
-aws s3 cp --recursive $WS/exports s3://<bucket>/exports   # copy results out before stopping the Pod
-```
-
-On images that keep `nvcc` in `/usr/local/cuda` off the SSH `PATH`, the pipeline finds it and builds llama.cpp
-for the GPU (`sm_103` on a B300). The release procedure is in [docs/release.md](docs/release.md). Hosts that
-ship their own ML stack (Lambda Stack) can reuse it instead: [the lambda-stack profile](docs/deployment-lambda.md).
-
-### Publish to Hugging Face
-
-`./main.sh --yes` on a terminal asks before the first stage whether to publish the run when it is ready. On
-yes it logs you in if needed (`hf auth login`, from the project's own environment), asks the repository name
-and its visibility (private, or public straight away), and, unless `publish.formats` in the config already lists them, lets you pick the formats by bit level
-(16-bit master, 8-bit FP8/Q8_0, … 4-bit Q4_K_M/IQ4_XS/…). Login problems and taken names stop the run
-in its first minute, not after hours. `--yes` does not answer the question, and without a terminal nothing
-is published.
-
-```bash
-./main.sh --publish RUN_ID          # a finished run later: the plan, then "Upload now?" on a terminal
-```
-
-Only a run whose release record is `ready` is uploaded (`<name>`, `<name>-FP8`, `<name>-GGUF`, as far as
-their formats are published), with a generated model card and every file checked remotely; a public upload
-that fails the check is switched to private ([docs/release.md](docs/release.md)).
-
-## Run, resume, quantize-only
-
-```bash
-./main.sh --through 2 --yes                         # stop after acquisition
-./main.sh --resume RUN_ID                           # continue; valid receipts are reused
-./main.sh --resume RUN_ID --from 5 --through 6 --rerun
-./main.sh --resume RUN_ID --fork --quantizations fp8  # config change → new run reusing still-valid work
-./main.sh --model-url org/model --quantize-only --quantizations fp8,iq4_xs,iq3_s --yes
-./main.sh --model-path /data/model --quantize-only --yes
-./main.sh --experiment optimize --max-trials 50 --max-runtime-minutes 120 --yes
-./main.sh --config examples/ubuntu-quantize-only.yaml --yes   # quantize an existing model, no abliteration
-./main.sh --status RUN_ID ; ./main.sh --list-runs ; ./main.sh --cleanup
-```
-
-More in [docs/cli.md](docs/cli.md) and [examples/resume.md](examples/resume.md).
+Every stage has run end to end on a B300 (Qwen3.5-2B, native FP8 in vLLM) and an A100; each commit is
+accepted on CPU first ([acceptance](docs/acceptance.md)). The Qwen3.8-27B release is one B300 run
+([release](docs/release.md)). Verified and not verified: [limitations](docs/limitations.md).
 
 ## Outputs
 
 ```text
 workspace/
-├── cache/{hf,uv,vllm,flashinfer,…}       HF cache (verified, read-only source blobs), uv cache, kernel compile caches
-├── tools/{components.json,envs,heretic,llama.cpp}
-├── models/source/<org>--<name>/<sha>.json   verified source records (+ link to the snapshot)
-├── models/candidates/<run>/<candidate>/     Heretic exports
-├── models/selected/<run>/master.json        pointer to the promoted master
-├── models/gguf-intermediate/                re-creatable conversion intermediates
-├── manifests/<artifact_id>.json             every manifest ever produced
-├── assessments/<artifact_id>/               append-only verification, comparison and promotion records
-├── exports/{bf16,fp8,gguf}/<name>/          deliverables (+ <name>.manifest.json sidecars)
-└── runs/<run>/{logs,receipts,configs,metrics,checkpoints,reports}/
+├── exports/{bf16,fp8,gguf}/<name>/     deliverables, each with a manifest sidecar
+├── runs/<run>/reports/report.md        stages, gates, loader tests, metric provenance, tool versions, time
+├── runs/<run>/{logs,receipts,metrics}/ what happened, why, and the measurements
+├── manifests/  assessments/            every artifact's manifest and its verification records
+├── models/                             verified sources, candidates, the selected master
+└── tools/  cache/                      pinned tool environments and caches
 ```
-
-`runs/<run>/reports/report.md` summarizes stages, artifacts (integrity, loader test, modalities
-actually tested), gates, metric provenance, tool versions and measured time.
 
 ## Documentation
 
-[run walkthrough](docs/run-walkthrough.md) · [architecture](docs/architecture.md) · [stages](docs/stages.md) · [cli](docs/cli.md) ·
-[configuration](docs/configuration.md) · [Ubuntu](docs/deployment-ubuntu.md) · [Lambda Stack profile](docs/deployment-lambda.md) ·
-[Heretic adapter](docs/heretic-adapter.md) · [study lifecycle](docs/study-lifecycle.md) · [quantization](docs/quantization.md) · [evaluation](docs/evaluation.md) · [assessments](docs/assessments.md) ·
-[artifact schema](docs/artifact-schema.md) · [security](docs/security-and-trust.md) · [troubleshooting](docs/troubleshooting.md) ·
-[limitations](docs/limitations.md) · [acceptance](docs/acceptance.md) · [release](docs/release.md) · [implementation log](docs/implementation-log.md) · [original specification](docs/PROJECT_A_AGENT_HANDOFF.md)
+[run walkthrough](docs/run-walkthrough.md) · [cli](docs/cli.md) · [configuration](docs/configuration.md) ·
+[release](docs/release.md) · [troubleshooting](docs/troubleshooting.md) · [limitations](docs/limitations.md) ·
+[architecture](docs/architecture.md) · [stages](docs/stages.md) · [study lifecycle](docs/study-lifecycle.md) ·
+[Heretic adapter](docs/heretic-adapter.md) · [quantization](docs/quantization.md) · [evaluation](docs/evaluation.md) ·
+[assessments](docs/assessments.md) · [artifact schema](docs/artifact-schema.md) · [security](docs/security-and-trust.md) ·
+[Ubuntu](docs/deployment-ubuntu.md) · [Lambda Stack profile](docs/deployment-lambda.md) · [acceptance](docs/acceptance.md) ·
+[implementation log](docs/implementation-log.md) · [specification](docs/PROJECT_A_AGENT_HANDOFF.md)
 
 ## Development
 
-```bash
-uv sync --frozen            # or ./main.sh --bootstrap --yes, then .venv/bin/pip install -r requirements/dev.txt
-.venv/bin/python -m pytest  # CPU-only unit + mocked integration tests
-python scripts/generate_schema.py --check
-REALTOOLS_WS=/tmp/ws python tests/realtools/provision_cpu.py && REALTOOLS_WS=/tmp/ws pytest -m realtools tests/realtools
-pytest -m gpu tests/gpu     # on the B200/B300 release host; other GPUs need GPU_ALLOW_OTHER=1
-python3 scripts/acceptance_record.py --workspace WS --run RUN --setup-run A --reuse-run B   # docs/acceptance.md
-python3 scripts/acceptance_record.py --kind release --workspace WS --run RUN                 # docs/release.md
+```text
+Test:      uv sync --frozen && .venv/bin/python -m pytest
+Schema:    python scripts/generate_schema.py --check
+Real CPU:  REALTOOLS_WS=/tmp/ws python tests/realtools/provision_cpu.py && REALTOOLS_WS=/tmp/ws pytest -m realtools tests/realtools
+GPU:       pytest -m gpu tests/gpu                        (B200/B300; other GPUs need GPU_ALLOW_OTHER=1)
+Record:    python3 scripts/acceptance_record.py --kind release --workspace WS --run RUN
 ```
 
-Project B (coding-capability research) is intentionally **not** part of this repository.
-Third-party licenses: [LICENSE-THIRD-PARTY.md](LICENSE-THIRD-PARTY.md) (Heretic is AGPL-3.0).
+Project B (coding-capability research) is not part of this repository. Third-party licenses:
+[LICENSE-THIRD-PARTY.md](LICENSE-THIRD-PARTY.md) (Heretic is AGPL-3.0).
