@@ -7,7 +7,7 @@ commit you are about to run.
 
 ## What gets published
 
-| Repository (private on upload) | Contents | Created when `publish.formats` lists |
+| Repository | Contents | Created when `publish.formats` lists |
 |---|---|---|
 | `<namespace>/<name>` | the BF16 master (safetensors, tokenizer, processor and chat-template files) | `master` |
 | `<namespace>/<name>-FP8` | FP8_BLOCK (compressed-tensors) for vLLM and other FP8 runtimes | `fp8` |
@@ -34,10 +34,16 @@ Publish to Hugging Face when the run is ready? [y/N] y
   login valid until 2026-12-01
 Repository name [Qwen3.8-27B-abliterated]:
 
+Visibility once uploaded:
+  1) private  only you can see it; make it public later on Hugging Face (counts toward your private storage)
+  2) public   anyone can see and download it as soon as the upload starts
+Choice [1]: 2
+
 Summary
   Publish      : BF16 master, FP8, GGUF Q4_K_M
-  Repositories : brokenmagic/Qwen3.8-27B-abliterated, -FP8, -GGUF   (private, names free)
+  Repositories : brokenmagic/Qwen3.8-27B-abliterated, -FP8, -GGUF   (public, names free)
   Upload       : ~99.2 GB, after the release record says ready
+  PUBLIC       : anyone can see and download the files from the moment the upload starts
 Continue? [Y/n]
 ```
 
@@ -46,6 +52,12 @@ Continue? [Y/n]
   `hf auth login`; nothing is installed. A read-only token, or a fine-grained one without `repo.write` for
   the namespace, is refused here. OAuth logins report no token role, so their write access is confirmed when
   the repositories are created; their expiry date is shown, with a warning when it is less than two days away.
+- **Visibility** (`publish.visibility: ask|private|public`; without a terminal `ask` means private). Private
+  repositories count toward Hugging Face's private storage allowance, which is far smaller than the public
+  one: the 27B release (~99 GB) nearly fills a 100 GB private allowance. Public uploads go up public
+  directly: anyone can download the files while they upload, before the remote check. If that check fails,
+  the repository is switched to private so nobody downloads a broken upload. With private, you make the
+  repositories public later in their settings.
 - **Formats.** With `publish.formats: null` you pick them by bit level, then by format inside each level
   (Enter accepts the defaults in brackets, which come from the config):
 
@@ -86,7 +98,7 @@ Continue? [Y/n]
   without asking (also without a terminal, with the config's or the default choices); `false` never asks.
 
 At the end of a run that opted in, the release record is computed and, only if it says `ready`, the
-repositories are created private and uploaded. Otherwise nothing is uploaded and the run exits with the
+repositories are created with the chosen visibility and uploaded. Otherwise nothing is uploaded and the run exits with the
 reason (`E_PUBLISH_NOT_READY`, exit 9); the stages' own results are unaffected.
 
 ## The release record
@@ -151,7 +163,7 @@ them); the namespace falls back to the login. Running it again continues an inte
 
 3. **Copy out** before stopping the Pod: `$WS/runs`, `$WS/manifests`, `$WS/assessments`, `$WS/exports`.
 
-4. **Review on Hugging Face** (repositories are private): the model cards, the file lists, then make them
+4. **Review on Hugging Face**: the model cards and file lists. Private repositories: make them
    public in each repository's settings. The pipeline never does that.
 
 ## If the record is not ready

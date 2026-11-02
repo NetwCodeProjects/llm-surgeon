@@ -997,10 +997,20 @@
           "items": {
             "type": "string"
           }
+        },
+        "visibility": {
+          "type": "string",
+          "description": "private: only you see the repositories until you make them public; public: anyone can see and download them from the moment the upload starts. ask: asked at the start (interactive); without a terminal, private.",
+          "enum": [
+            "ask",
+            "private",
+            "public"
+          ],
+          "default": "ask"
         }
       },
       "additionalProperties": false,
-      "description": "Publishing to Hugging Face (docs/release.md). Repositories are always created private."
+      "description": "Publishing to Hugging Face (docs/release.md)."
     },
     "execution": {
       "type": "object",

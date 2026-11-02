@@ -1,14 +1,14 @@
 """Publishing choices at the start of a run, and the upload at its end (docs/release.md).
 
 With ``publish.enabled: ask`` a new run on an interactive terminal asks, right after the banner, whether to
-publish. On yes: the login (``hf auth login`` from ``.venv`` when there is no token), the repository name and,
-when ``publish.formats`` is null, the formats, picked by bit level. ``--yes`` never answers these questions,
+publish. On yes: the login (``hf auth login`` from ``.venv`` when there is no token), the repository name, its
+visibility (private or public) and, when ``publish.formats`` is null, the formats, picked by bit level. ``--yes`` never answers these questions,
 and without a terminal nothing is published. The answers are stored in the run's resolved configuration
 (``publish.*`` keys are operational, so they never change a stage key); a resumed run uses them.
 
 Whatever would only fail hours later stops the run here instead: no token or a read-only one, a repository
 name that is taken, a format whose release check cannot pass on this host, uncommitted code. At the end, a run
-that opted in is uploaded (private) only when its release record says ready.
+that opted in is uploaded, with the chosen visibility, only when its release record says ready.
 """
 
 from __future__ import annotations
@@ -98,6 +98,11 @@ def run_blockers(config: ResolvedConfig, chosen: list[str], code: dict[str, Any]
     elif code.get("git_dirty"):
         out.append("the checkout has uncommitted code changes (git status); the release record needs a clean commit (configs/ do not count)")
     return out
+
+
+def stored_visibility(value: str | None) -> str:
+    """The stored choice; 'ask' that was never answered (no terminal) is private."""
+    return "public" if value == "public" else "private"
 
 
 def repo_ids(namespace: str, name: str, chosen: list[str]) -> list[str]:
@@ -281,6 +286,18 @@ def ask_name(p: Prompter, current: str) -> str:
         p.say(f"  {name!r} is not a valid Hugging Face repository name (letters, digits, '.', '_', '-').")
 
 
+def ask_visibility(p: Prompter) -> str:
+    rows = [
+        "private  only you can see it; make it public later on Hugging Face (counts toward your private storage)",
+        "public   anyone can see and download it as soon as the upload starts",
+    ]
+    while True:
+        picked = pick(p, "Visibility once uploaded:", rows, [1])
+        if len(picked) == 1:
+            return ("private", "public")[picked[0] - 1]
+        p.say("  Choose one.")
+
+
 def with_choices(config: ResolvedConfig, values: dict[str, Any]) -> ResolvedConfig:
     return finalize(deep_merge(config.data, overrides_to_tree(values)), [*config.sources, "publish choices"], profiles=config.profiles)
 
@@ -326,6 +343,9 @@ def at_start(config: ResolvedConfig, *, run_id: str, how: str, stage_ids: list[s
         name = ask_name(p, name)
     elif not NAME_RE.match(name):
         raise PipelineError(ExitCode.CONFIG, "E_PUBLISH_NAME", f"{name!r} is not a valid Hugging Face repository name", hint="Set publish.repo_name.")
+    visibility = config.get("publish.visibility")
+    if visibility == "ask":
+        visibility = ask_visibility(p) if ask_here else "private"
     code = services.probe_factory(True).code_revision(PROJECT_ROOT)
     quant = config.get("quantization.formats") if config.get("quantization.enabled") else []
     blocked = format_blockers(config)
@@ -351,11 +371,10 @@ def at_start(config: ResolvedConfig, *, run_id: str, how: str, stage_ids: list[s
             hint="Change the configuration, or answer no to publishing (publish.enabled: false).",
         )
     while True:
-        states = {repo: account.repo_state(repo, token) for repo in repo_ids(namespace, name, chosen)}
-        taken = {repo: s for repo, s in states.items() if s in ("public", "content")}
+        taken = [repo for repo in repo_ids(namespace, name, chosen) if account.repo_state(repo, token) == "content"]
         if not taken:
             break
-        message = "; ".join(f"{repo} already exists{' and is public' if s == 'public' else ' with files'}" for repo, s in taken.items())
+        message = "; ".join(f"{repo} already exists with files" for repo in taken)
         if not ask_here:
             raise PipelineError(ExitCode.CONFIG, "E_PUBLISH_CONFLICT", message, hint="Choose another name (publish.repo_name).")
         p.say(f"  {message}. Choose another name.")
@@ -369,13 +388,19 @@ def at_start(config: ResolvedConfig, *, run_id: str, how: str, stage_ids: list[s
         p.say("  Also built   : BF16 master (abliteration produces it; not published)")
     base = f"{namespace}/{name}"
     shown = [base, *(r[len(base) :] for r in repos[1:])] if repos[0] == base else repos
-    p.say(f"  Repositories : {', '.join(shown)}   (private, names free)")
+    p.say(f"  Repositories : {', '.join(shown)}   ({visibility}, names free)")
     p.say(f"  Upload       : {f'~{human(estimate)}, ' if estimate else ''}after the release record says ready")
+    if visibility == "public":
+        p.say("  PUBLIC       : anyone can see and download the files from the moment the upload starts")
+    else:
+        p.say("  Private      : counts toward your Hugging Face private storage; make it public later in each repository's settings")
     if "quantization.formats" in overrides:
         p.say(f"  These formats differ from the config file: after an interruption continue with ./main.sh --resume {run_id}")
     if ask_here and not p.yes_no("Continue?", True):
         raise PipelineError(ExitCode.CONFIRMATION_REQUIRED, "E_NOT_CONFIRMED", "Run cancelled at the publishing summary")
-    overrides.update({"publish.enabled": True, "publish.namespace": namespace, "publish.repo_name": name, "publish.formats": chosen})
+    overrides.update(
+        {"publish.enabled": True, "publish.namespace": namespace, "publish.repo_name": name, "publish.formats": chosen, "publish.visibility": visibility}
+    )
     return with_choices(config, overrides)
 
 
@@ -393,7 +418,7 @@ def at_end(run, stage_ids: list[str], services, stream) -> int | None:
         return None
     from .publish import build_plan, upload  # noqa: PLC0415
 
-    p.say("\nPublishing (private repositories)")
+    p.say(f"\nPublishing ({stored_visibility(config.get('publish.visibility'))} repositories)")
     token_env = config.get("model.hf_token_env") or "HF_TOKEN"
     try:
         account = services.account_factory()
@@ -402,7 +427,14 @@ def at_end(run, stage_ids: list[str], services, stream) -> int | None:
         if who is None:
             raise PipelineError(ExitCode.CONFIG, "E_HF_TOKEN_MISSING", "The Hugging Face login is gone", hint=f"Log in again, then: {command}")
         namespace = config.get("publish.namespace") or who["name"]  # null when publish.enabled: true came from the config
-        plan, generated = build_plan(run.workspace, run.run_id, namespace, config.get("publish.repo_name"), config.get("publish.formats"))
+        plan, generated = build_plan(
+            run.workspace,
+            run.run_id,
+            namespace,
+            config.get("publish.repo_name"),
+            config.get("publish.formats"),
+            stored_visibility(config.get("publish.visibility")),
+        )
         p.say(f"  Release record: ready; uploading {sum(len(r['files']) for r in plan['repos'])} files")
         return upload(run.workspace, run.run_id, plan, generated, token, services, stream)
     except PipelineError as exc:

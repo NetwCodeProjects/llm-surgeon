@@ -1,11 +1,14 @@
-"""Upload staged folders to private Hugging Face repositories and check every file (runs in the heretic env).
+"""Upload staged folders to Hugging Face repositories and check every file (runs in the heretic env).
 
-Reads a job written by llm_surgeon.publish: [{repo_id, folder, files: [{path, size_bytes, sha256, git_sha1}]}].
-Per repository: refuse a repository that is public or holds other content; create it private; upload with
+Reads a job written by llm_surgeon.publish: {private, repos: [{repo_id, folder, files: [{path, size_bytes,
+sha256, git_sha1}]}]}. Per repository: refuse one that holds other content; create it with the job's
+visibility, or set an existing (empty, or holding this upload's files) repository to it; upload with
 ``HfApi.upload_large_folder`` (resumable: an interrupted run continues where it stopped); then list the
-repository and compare every planned file (sha256 for LFS/Xet files, the git blob id for small files).
+repository and compare every planned file (sha256 for LFS/Xet files, the git blob id for small files). A public
+repository whose check fails is switched to private, so nobody downloads a broken upload.
 Writes {"repos": [{repo_id, verified, revision, private, mismatches, error}]}. Verified against
-huggingface_hub 1.33.0 (signatures of upload_large_folder, list_repo_tree, create_repo, model_info).
+huggingface_hub 1.33.0 (signatures of upload_large_folder, list_repo_tree, create_repo, update_repo_settings,
+model_info).
 """
 
 from __future__ import annotations
@@ -30,7 +33,7 @@ def matches(entry, planned: dict) -> bool:
     return entry.blob_id == planned["git_sha1"]
 
 
-def publish_repo(api, repo: dict) -> dict:
+def publish_repo(api, repo: dict, private: bool = True) -> dict:
     from huggingface_hub.errors import RepositoryNotFoundError
 
     repo_id, planned = repo["repo_id"], {f["path"]: f for f in repo["files"]}
@@ -40,17 +43,28 @@ def publish_repo(api, repo: dict) -> dict:
     except RepositoryNotFoundError:
         remote, exists = {}, False
     if exists:
-        if not api.model_info(repo_id).private:
-            return {"repo_id": repo_id, "verified": False, "error": "the repository exists and is public; refusing to upload into it"}
         foreign = sorted(p for p, e in remote.items() if p != ".gitattributes" and (p not in planned or not matches(e, planned[p])))
         if foreign:
             return {"repo_id": repo_id, "verified": False, "error": f"the repository already holds other content: {foreign[:10]}"}
-    api.create_repo(repo_id, private=True, repo_type="model", exist_ok=True)
-    api.upload_large_folder(repo_id=repo_id, folder_path=repo["folder"], repo_type="model", private=True)
+        if bool(api.model_info(repo_id).private) != private:
+            api.update_repo_settings(repo_id, private=private, repo_type="model")
+    else:
+        api.create_repo(repo_id, private=private, repo_type="model", exist_ok=True)
+    api.upload_large_folder(repo_id=repo_id, folder_path=repo["folder"], repo_type="model", private=private)
     remote = remote_files(api, repo_id)
     mismatches = sorted(p for p, f in planned.items() if p not in remote or not matches(remote[p], f))
     info = api.model_info(repo_id)
-    return {"repo_id": repo_id, "verified": not mismatches and bool(info.private), "revision": info.sha, "private": info.private, "mismatches": mismatches}
+    result = {
+        "repo_id": repo_id,
+        "verified": not mismatches and bool(info.private) == private,
+        "revision": info.sha,
+        "private": info.private,
+        "mismatches": mismatches,
+    }
+    if not result["verified"] and not info.private:
+        api.update_repo_settings(repo_id, private=True, repo_type="model")
+        result.update(private=True, error="the remote check failed, so the repository was switched to private")
+    return result
 
 
 def main() -> int:
@@ -68,7 +82,7 @@ def main() -> int:
         api = HfApi(token=os.environ["HF_TOKEN"])
         for repo in job["repos"]:
             try:
-                result["repos"].append(publish_repo(api, repo))
+                result["repos"].append(publish_repo(api, repo, bool(job.get("private", True))))
             except Exception as exc:  # noqa: BLE001
                 result["repos"].append({"repo_id": repo["repo_id"], "verified": False, "error": f"{type(exc).__name__}: {exc}"})
     except Exception as exc:  # noqa: BLE001

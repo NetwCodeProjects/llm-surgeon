@@ -157,10 +157,11 @@ first (`E_GATE_REQUIREMENT_MISSING`).
 | `quantization.gguf.keep_intermediate` | boolean | `true` |  |  |
 | `quantization.smoke_prompts` | array | `["What is the capital of France? Answer in one word.", "W...` |  |  |
 | `quantization.smoke_max_tokens` | integer | `64` |  |  |
-| `publish.enabled` | string\|boolean (ask\|true\|false) | `"ask"` | yes | Upload the run to private Hugging Face repositories once its release record says ready. `ask`: asked at the start of a new run on an interactive terminal (`--yes` does not answer it; without a terminal nothing is published); `true`: publish without asking; `false`: never. See [release.md](release.md#publishing-is-chosen-when-the-run-starts). |
+| `publish.enabled` | string\|boolean (ask\|true\|false) | `"ask"` | yes | Upload the run to Hugging Face once its release record says ready. `ask`: asked at the start of a new run on an interactive terminal (`--yes` does not answer it; without a terminal nothing is published); `true`: publish without asking; `false`: never. See [release.md](release.md#publishing-is-chosen-when-the-run-starts). |
 | `publish.namespace` | string\|null | `null` | yes | Hugging Face user or organization; null = the logged-in account. |
 | `publish.repo_name` | string\|null | `null` | yes | Base repository name; null = `<source model name>-abliterated`. Exports go to `<name>-FP8` and `<name>-GGUF`. |
 | `publish.formats` | array\|null | `null` | yes | What to publish: `master` and any of `quantization.formats` (anything else is `E_PUBLISH_FORMAT`). null = picked by bit level at the start (interactive) or everything the run builds. `--quantizations` resets it to null. |
+| `publish.visibility` | string (ask\|private\|public) | `"ask"` | yes | private: only you see the repositories until you make them public; public: anyone can see and download them from the moment the upload starts (a failed remote check switches them to private). ask: asked at the start; without a terminal, private. |
 | `execution.resume` | boolean | `true` | yes | Auto-resume the latest incomplete run with an identical config fingerprint. |
 | `execution.stop_on_failure` | boolean | `true` | yes |  |
 | `execution.allow_partial_exports` | boolean | `true` |  |  |

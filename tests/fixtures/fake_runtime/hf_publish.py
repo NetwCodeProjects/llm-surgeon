@@ -1,7 +1,8 @@
 """Fake Hugging Face upload: copies each staged folder into $FAKE_COUNTER_DIR/hub/<namespace>/<name>/.
 
 Mirrors scripts/runtime/hf_publish.py: refuses a repository that holds other content, uploads, then checks
-every planned file by hash. FAKE_HF_CORRUPT=<path in repo> corrupts that file after the upload (the remote
+every planned file by hash. Each repository's visibility goes to $FAKE_COUNTER_DIR/hub/visibility.json; a
+public repository whose check fails is switched to private there. FAKE_HF_CORRUPT=<path in repo> corrupts that file after the upload (the remote
 check must catch it). Never touches the network.
 """
 
@@ -17,6 +18,9 @@ out = Path(sys.argv[sys.argv.index("--out") + 1])
 hub = Path(os.environ["FAKE_COUNTER_DIR"]) / "hub"
 assert os.environ.get("HF_TOKEN"), "the token reaches the upload process through the environment"
 result = {"repos": []}
+private = bool(job.get("private", True))
+visibility_file = hub / "visibility.json"
+visibility = json.loads(visibility_file.read_text()) if visibility_file.exists() else {}
 for repo in job["repos"]:
     target = hub / repo["repo_id"]
     planned = {f["path"]: f for f in repo["files"]}
@@ -32,6 +36,11 @@ for repo in job["repos"]:
     if corrupt and (target / corrupt).exists():
         (target / corrupt).write_bytes(b"corrupted")
     mismatches = sorted(p for p, f in planned.items() if hashlib.sha256((target / p).read_bytes()).hexdigest() != f["sha256"])
-    result["repos"].append({"repo_id": repo["repo_id"], "verified": not mismatches, "revision": "f" * 40, "private": True, "mismatches": mismatches})
+    visibility[repo["repo_id"]] = "private" if private or mismatches else "public"
+    result["repos"].append(
+        {"repo_id": repo["repo_id"], "verified": not mismatches, "revision": "f" * 40, "private": private or bool(mismatches), "mismatches": mismatches}
+    )
+hub.mkdir(parents=True, exist_ok=True)
+visibility_file.write_text(json.dumps(visibility))
 out.write_text(json.dumps(result), encoding="utf-8")
 sys.exit(0 if all(r["verified"] for r in result["repos"]) else 1)

@@ -534,3 +534,16 @@ Deviation from the sample the owner approved: a GGUF type that needs an importan
 picker with the reason, instead of offering "the default calibration text". The project pins no calibration
 text, and inventing one is not a choice the picker should make; `quantization.gguf.imatrix_dataset` enables
 those types. The ternary types TQ1_0/TQ2_0 are left out of the picker (they suit ternary-trained models).
+
+## 2026-11-02 — Visibility chosen at the start
+
+Owner's decision (2026-11-02, after Hugging Face's storage terms: 100 GB private, 7 TB public): publishing can
+go up public directly. `publish.visibility: ask|private|public` (operational; `ask` without a terminal is
+private) is asked after the repository name; the summary says what the choice means (public: downloadable
+from the moment the upload starts; private: counts toward the private allowance, which the ~99 GB 27B release
+nearly fills). The visibility is part of the plan the `--publish` token covers (`--visibility` overrides the
+run's choice), so a token reviewed for a private upload cannot upload publicly. The uploader creates each
+repository with that visibility, sets an existing one (empty, or holding this upload's files) to it with
+`update_repo_settings(private=…)` (huggingface_hub 1.33.0 in the heretic env, signature checked), and
+switches a public repository whose remote check fails to private. The start check no longer treats a public
+repository as taken; only one holding other files is.

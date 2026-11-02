@@ -256,7 +256,6 @@ class FakeAccount:
         self.hub_dir, self.orgs, self.role, self.expires = hub_dir, orgs, role, expires
         self.logins = 0
         self.login_token: str | None = None  # what `hf auth login` "stores"
-        self.public: set[str] = set()
 
     def token(self, env_name):
         import os
@@ -276,8 +275,6 @@ class FakeAccount:
         return {"name": "tester", "type": "user", "orgs": [{"name": o} for o in self.orgs], "auth": auth}
 
     def repo_state(self, repo_id, token):
-        if repo_id in self.public:
-            return "public"
         target = self.hub_dir / repo_id
         return "content" if target.exists() and any(p.is_file() for p in target.rglob("*")) else "missing"
 

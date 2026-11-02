@@ -37,7 +37,7 @@ is `runs/<run id>/` with `logs/`, `receipts/`, `configs/`, `metrics/`, `checkpoi
 5. **Publishing (new runs, on a terminal).** "Publish to Hugging Face when the run is ready?" With
    `publish.enabled: ask` (the default) a person answers it; `--yes` does not, and without a terminal it is
    not asked (nothing is published). On yes: the login (`hf auth login` runs when there is none), the
-   repository name, the formats by bit level when `publish.formats` is null, and the checks that would
+   repository name, private or public, the formats by bit level when `publish.formats` is null, and the checks that would
    otherwise fail hours later (token permissions, taken names, formats that cannot pass the release check
    here, uncommitted code); then a summary to confirm. The answers are saved with the run
    ([release.md](release.md#publishing-is-chosen-when-the-run-starts)).
@@ -250,7 +250,7 @@ code is 0 when everything succeeded. Otherwise it identifies the failing area (t
 [cli.md](cli.md#exit-codes)); 130 means interrupted.
 
 **Publishing**, when it was chosen at the start: the release record is computed for the formats being
-published; only if it says `ready` are the repositories created (private), uploaded and every file checked
+published; only if it says `ready` are the repositories created (private or public, as chosen), uploaded and every file checked
 remotely. Otherwise nothing is uploaded and the exit code says why (9 when the record is not ready). A run that
 did not ask (no terminal) prints the command to publish it later: `./main.sh --publish RUN_ID`
 ([release.md](release.md)).

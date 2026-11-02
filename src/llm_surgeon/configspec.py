@@ -500,8 +500,16 @@ SPEC = S(
                     operational=True,
                     description="What to publish: 'master' and any of quantization.formats. null = chosen at the start (interactive) or everything the run builds.",
                 ),
+                "visibility": F(
+                    "string",
+                    "ask",
+                    enum=("ask", "private", "public"),
+                    operational=True,
+                    description="private: only you see the repositories until you make them public; public: anyone can see and download them "
+                    "from the moment the upload starts. ask: asked at the start (interactive); without a terminal, private.",
+                ),
             },
-            description="Publishing to Hugging Face (docs/release.md). Repositories are always created private.",
+            description="Publishing to Hugging Face (docs/release.md).",
         ),
         "execution": S(
             {

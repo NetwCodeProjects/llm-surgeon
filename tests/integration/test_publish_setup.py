@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import subprocess
 from datetime import datetime, timezone
 
@@ -122,7 +123,7 @@ def test_a_login_that_expires_soon_is_flagged():
 def test_asked_at_the_start_logged_in_picked_and_uploaded_at_the_end(env, monkeypatch):
     monkeypatch.delenv("HF_TOKEN", raising=False)
     env.provision(["--quantizations", "fp8,q4_k_m"])  # the components the picked formats need
-    answer = interactive(env, "y", "", "1,2,5", "1", "1", "")
+    answer = interactive(env, "y", "", "", "1,2,5", "1", "1", "")  # yes, name, visibility (private), the picker, continue
     code, out = env.run()
     assert code == 0, out
     assert answer.prompts[:2] == ["Publish to Hugging Face when the run is ready? [y/N] ", "Repository name [Qwen3.8-27B-abliterated]: "]
@@ -133,7 +134,14 @@ def test_asked_at_the_start_logged_in_picked_and_uploaded_at_the_end(env, monkey
     assert "These formats differ from the config file" in out
     assert out.index("Summary") < out.index("Run ")  # the questions come before the first stage
     config = stored_config(env)
-    assert config["publish"] == {"enabled": True, "namespace": "tester", "repo_name": "Qwen3.8-27B-abliterated", "formats": ["master", "fp8", "q4_k_m"]}
+    assert config["publish"] == {
+        "enabled": True,
+        "namespace": "tester",
+        "repo_name": "Qwen3.8-27B-abliterated",
+        "formats": ["master", "fp8", "q4_k_m"],
+        "visibility": "private",
+    }
+    assert "Private      : counts toward your Hugging Face private storage" in out
     assert config["quantization"]["formats"] == ["fp8", "q4_k_m"]
     hub = env.counters / "hub" / "tester"
     assert sorted(p.name for p in hub.iterdir()) == ["Qwen3.8-27B-abliterated", "Qwen3.8-27B-abliterated-FP8", "Qwen3.8-27B-abliterated-GGUF"]
@@ -180,8 +188,8 @@ def test_a_taken_name_is_asked_again_on_a_terminal(env, monkeypatch):
     taken.mkdir(parents=True)
     (taken / "config.json").write_text("{}")
     env.provision()
-    # yes, the default name, the picker's defaults (levels, 8-, 4- and 3-bit), a free name for the taken one, then no
-    answer = interactive(env, "y", "", "", "", "", "", "mine", "n")
+    # yes, the default name, private, the picker's defaults (levels, 8-, 4- and 3-bit), a free name for the taken one, then no
+    answer = interactive(env, "y", "", "", "", "", "", "", "mine", "n")
     code, out = env.run()
     assert code == ExitCode.CONFIRMATION_REQUIRED, out
     assert "tester/Qwen3.8-27B-abliterated already exists with files. Choose another name." in out
@@ -200,6 +208,49 @@ def test_a_resumed_run_publishes_with_the_login_as_namespace(env, monkeypatch):
     assert code == 0, out
     assert "Publishing: on, as chosen when the run started" in out
     assert len(list((env.counters / "hub" / "tester").iterdir())) == 3
+
+
+def visibility(env) -> dict:
+    return json.loads((env.counters / "hub" / "visibility.json").read_text())
+
+
+def test_public_is_chosen_at_the_start_and_uploaded_directly_as_public(env, monkeypatch):
+    monkeypatch.setenv("HF_TOKEN", "hf_fake_write_token")
+    env.provision()
+    answer = interactive(env, "y", "", "2", "", "", "", "", "")  # yes, name, public, picker defaults, continue
+    code, out = env.run()
+    assert code == 0, out
+    assert "Visibility once uploaded:" in out and answer.prompts[2] == "Choice [1]: "
+    assert "(public, names free)" in out and "PUBLIC       : anyone can see and download" in out
+    assert stored_config(env)["publish"]["visibility"] == "public"
+    assert set(visibility(env).values()) == {"public"} and len(visibility(env)) == 3
+    assert "published: https://huggingface.co/tester/Qwen3.8-27B-abliterated (PUBLIC)" in out
+
+
+def test_without_a_terminal_ask_means_private(env, monkeypatch):
+    monkeypatch.setenv("HF_TOKEN", "hf_fake_write_token")
+    env.provision()
+    code, out = env.run("--set", "publish.enabled=true")
+    assert code == 0, out
+    assert set(visibility(env).values()) == {"private"}
+
+
+def test_the_plan_token_covers_the_visibility_and_a_failed_public_upload_is_made_private(env, monkeypatch):
+    monkeypatch.setenv("HF_TOKEN", "hf_fake_write_token")
+    env.provision(["--quantizations", "fp8,q4_k_m"])
+    code, out = env.run("--quantizations", "fp8,q4_k_m")
+    run = env.latest_run().name
+    code, private_plan = env.run("--publish", run)
+    code, public_plan = env.run("--publish", run, "--visibility", "public")
+    assert "Every repository: PRIVATE (only you)" in private_plan and "Every repository: PUBLIC" in public_plan
+    private_token, public_token = (re.search(r"--confirm-publish ([0-9a-f]{16})", o).group(1) for o in (private_plan, public_plan))
+    assert private_token != public_token and "--visibility public --confirm-publish" in public_plan
+    code, out = env.run("--publish", run, "--visibility", "public", "--confirm-publish", private_token, "--yes")
+    assert code == ExitCode.USAGE, "a token reviewed for a private upload does not upload publicly"
+    monkeypatch.setenv("FAKE_HF_CORRUPT", "config.json")
+    code, out = env.run("--publish", run, "--visibility", "public", "--confirm-publish", public_token, "--yes")
+    assert code == ExitCode.VERIFY, out
+    assert visibility(env)["tester/Qwen3.8-27B-abliterated"] == "private" and visibility(env)["tester/Qwen3.8-27B-abliterated-GGUF"] == "public"
 
 
 def test_publishing_only_a_gguf_type(env, monkeypatch):

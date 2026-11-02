@@ -119,6 +119,9 @@ def build_parser() -> argparse.ArgumentParser:
     pub.add_argument(
         "--repo-name", metavar="NAME", help="with --publish: base repository name (default: the run's publish.repo_name, else <source model>-abliterated)"
     )
+    pub.add_argument(
+        "--visibility", choices=["private", "public"], help="with --publish: repository visibility (default: the run's publish.visibility, else private)"
+    )
     pub.add_argument("--confirm-publish", metavar="TOKEN", help="with --publish and --yes: upload exactly the reviewed plan without a terminal")
     return p
 
@@ -136,8 +139,8 @@ def check_combinations(args: argparse.Namespace, parser: argparse.ArgumentParser
         parser.error("--experiment/--max-trials/--trial-id/--pareto-index/--allow-approximate-reproduction have no effect with --quantize-only")
     if args.confirm_cleanup and not args.cleanup:
         parser.error("--confirm-cleanup requires --cleanup")
-    if (args.hf_namespace or args.repo_name or args.confirm_publish) and not args.publish:
-        parser.error("--hf-namespace/--repo-name/--confirm-publish require --publish RUN_ID")
+    if (args.hf_namespace or args.repo_name or args.confirm_publish or args.visibility) and not args.publish:
+        parser.error("--hf-namespace/--repo-name/--visibility/--confirm-publish require --publish RUN_ID")
 
 
 def to_overrides(args: argparse.Namespace) -> dict[str, Any]:
@@ -289,7 +292,9 @@ def main(argv: list[str] | None = None, services: Any = None, stream=None) -> in
             from .orchestrator import Services  # noqa: PLC0415
             from .publish import publish  # noqa: PLC0415
 
-            return publish(workspace, args.publish, args.hf_namespace, args.repo_name, args.confirm_publish, args.yes, services or Services(), stream)
+            return publish(
+                workspace, args.publish, args.hf_namespace, args.repo_name, args.confirm_publish, args.yes, services or Services(), stream, args.visibility
+            )
         options = RunOptions(
             from_stage=args.from_stage,
             through_stage=args.through_stage,

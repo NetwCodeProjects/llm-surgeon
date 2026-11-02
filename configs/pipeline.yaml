@@ -97,12 +97,13 @@ quantization:
   input: selected_master
   formats: [fp8, q4_k_m]             # what is built after the master (any of fp8 and the GGUF types)
 
-# Publishing to Hugging Face (docs/release.md). Repositories are always created private; you make them public.
+# Publishing to Hugging Face (docs/release.md).
 publish:
   enabled: ask                       # ask: asked when a new run starts (terminal only; --yes does not answer it); true; false
   namespace: null                    # null = the account you are logged in as (or an organization of yours)
   repo_name: null                    # null = <model>-abliterated; exports go to <name>-FP8 and <name>-GGUF
   formats: [master, fp8, q4_k_m]     # our release; null = pick by bit level at the start (or everything built)
+  visibility: ask                    # private | public (anyone can download as it uploads) | ask (no terminal: private)
 
 execution:
   resume: true

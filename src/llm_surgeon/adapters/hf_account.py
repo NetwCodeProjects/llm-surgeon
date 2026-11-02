@@ -71,14 +71,12 @@ class HubAccount:
             raise PipelineError(ExitCode.ACQUIRE, "E_HF_API", f"Hugging Face account check failed: {exc}") from exc
 
     def repo_state(self, repo_id: str, token: str) -> str:
-        """'missing', 'empty' (private, nothing but .gitattributes), 'content' (private, with files) or 'public'."""
+        """'missing', 'empty' (nothing but .gitattributes) or 'content'. The uploader sets the chosen visibility."""
         hub = _hub()
         try:
             info = hub.HfApi().model_info(repo_id, token=token)
         except hub.errors.RepositoryNotFoundError:
             return "missing"
-        if not info.private:
-            return "public"
         files = {s.rfilename for s in info.siblings or []}
         return "empty" if files <= EMPTY_REPO_FILES else "content"
 
