@@ -36,7 +36,7 @@ and runs `python -m llm_surgeon`. `./main.sh --bootstrap --yes` only creates `.v
 | `--log-level` | `logging.console_level` | |
 | `--print-config`, `--list-stages`, `--list-runs`, `--status RUN_ID` | — | inspection, no execution |
 | `--cleanup [--confirm-cleanup TOKEN]` | — | always shows the plan first; deletes only `.partial` dirs, unregistered candidates and GGUF intermediates, and only with the token printed by the dry listing |
-| `--publish RUN_ID --hf-namespace NAME [--repo-name NAME] [--confirm-publish TOKEN]` | — | uploads a run whose release record is `ready` to private Hugging Face repositories ([release](release.md)). Without the token it only prints the plan; the upload needs the token, `--yes` and `$HF_TOKEN` |
+| `--publish RUN_ID [--hf-namespace NAME] [--repo-name NAME] [--confirm-publish TOKEN]` | — | uploads a finished run whose release record is `ready` to private Hugging Face repositories ([release](release.md)). Prints the plan, then asks "Upload now?" on a terminal; without one, the upload needs the plan's token and `--yes`. Namespace, name and formats default to the run's `publish.*` choices (the namespace then to the login). New runs ask at the start instead (`publish.enabled: ask`); `--yes` never answers that question |
 
 Mutually exclusive / invalid combinations (exit 2): `--lambda-stack`+`--ubuntu`; `--model-url`+`--model-path`;
 `--setup-only` with `--from/--through/--only`; `--only` with `--from/--through`; `--fork` without `--resume`;
@@ -57,10 +57,10 @@ per run.
 |---:|---|---|
 | 0 | success | |
 | 1 | internal error (bug) | `E_INTERNAL`, `E_ASSESSMENT_EXISTS`, `E_ASSESSMENT_INVALID` |
-| 2 | usage | argparse errors, `E_MODEL_REF_INVALID` (from CLI), `E_SET_INVALID`, `E_UNKNOWN_STAGE`, `E_STAGE_RANGE`, `E_CLEANUP_TOKEN`, `E_PUBLISH_NAME`, `E_PUBLISH_TOKEN` |
-| 3 | configuration | `E_CONFIG_INVALID`, `E_CONFIG_YAML`, `E_CONFIG_NOT_FOUND`, `E_MODEL_MISSING`, `E_TOML_INVALID`, `E_HERETIC_UNKNOWN_SETTING`, `E_HERETIC_TEMPLATE_CONTROL_KEY`, `E_REPRODUCE_SOURCE_MISSING`, `E_BASELINES_INVALID`, `E_PATH_ESCAPE`, `E_GATE_REQUIREMENT_MISSING`, `E_TRIAL_CHOICE_CONFLICT`, `E_TRIAL_NOT_FOUND`, `E_TRIAL_NOT_EXPORTABLE`, `E_HF_TOKEN_MISSING` |
+| 2 | usage | argparse errors, `E_MODEL_REF_INVALID` (from CLI), `E_SET_INVALID`, `E_UNKNOWN_STAGE`, `E_STAGE_RANGE`, `E_CLEANUP_TOKEN`, `E_PUBLISH_NAME`, `E_PUBLISH_TOKEN`, `E_PUBLISH_FORMAT` (`--publish`) |
+| 3 | configuration | `E_CONFIG_INVALID`, `E_CONFIG_YAML`, `E_CONFIG_NOT_FOUND`, `E_MODEL_MISSING`, `E_TOML_INVALID`, `E_HERETIC_UNKNOWN_SETTING`, `E_HERETIC_TEMPLATE_CONTROL_KEY`, `E_REPRODUCE_SOURCE_MISSING`, `E_BASELINES_INVALID`, `E_PATH_ESCAPE`, `E_GATE_REQUIREMENT_MISSING`, `E_TRIAL_CHOICE_CONFLICT`, `E_TRIAL_NOT_FOUND`, `E_TRIAL_NOT_EXPORTABLE`, `E_HF_TOKEN_MISSING`, `E_HF_TOKEN_READ_ONLY`, `E_HF_LOGIN_FAILED`, `E_PUBLISH_NAMESPACE`, `E_PUBLISH_NAME`, `E_PUBLISH_FORMAT`, `E_PUBLISH_IMPOSSIBLE`, `E_PUBLISH_CONFLICT` (the last seven when a run starts) |
 | 4 | preflight | `E_ENV_UNSUPPORTED_PLATFORM`, `E_ENV_AMBIGUOUS`, `E_PREFLIGHT_NO_GPU`, `E_DISK_FLOOR`, `E_CAPABILITY_UNSUPPORTED` |
-| 5 | environment | `E_HOST_PREREQ`, `E_HOST_ACTION_FAILED`, `E_REBOOT_REQUIRED`, `E_INSTALL_STEP_FAILED`, `E_COMPONENT_VALIDATION_FAILED`, `E_COMPONENT_MISSING`, `E_UV_MISSING`, `E_PIN_MISMATCH`, `E_CONTROL_ENV_INCOMPLETE`, `E_EXECUTABLE_MISSING`, `E_NVCC_MISSING`, `E_NVCC_ARCH_UNSUPPORTED` |
+| 5 | environment | `E_HOST_PREREQ`, `E_HOST_ACTION_FAILED`, `E_REBOOT_REQUIRED`, `E_INSTALL_STEP_FAILED`, `E_COMPONENT_VALIDATION_FAILED`, `E_COMPONENT_MISSING`, `E_UV_MISSING`, `E_PIN_MISMATCH`, `E_CONTROL_ENV_INCOMPLETE`, `E_EXECUTABLE_MISSING`, `E_NVCC_MISSING`, `E_NVCC_ARCH_UNSUPPORTED`, `E_HF_LOGIN_UNAVAILABLE` |
 | 6 | acquisition | `E_HF_GATED`, `E_HF_NOT_FOUND`, `E_HF_API`, `E_DOWNLOAD_CORRUPT`, `E_DISK_INSUFFICIENT`, `E_LOCAL_MODEL_INVALID`, `E_IMATRIX_DATA_MISSING` |
 | 7 | dependency / resume | `E_MISSING_DEPENDENCY`, `E_RESUME_CONFIG_CONFLICT`, `E_RUN_NOT_FOUND`, `E_COMPONENT_NOT_PROVISIONED`, `E_STUDY_ENVIRONMENT_CHANGED` |
 | 8 | engine | `E_HERETIC_NO_OUTPUT`, `E_HERETIC_CONFIG`, `E_HERETIC_BUDGET_EXHAUSTED`, `E_HERETIC_TIMEOUT`, `E_HERETIC_INTROSPECT`, `E_HERETIC_STUDY_TOOL`, `E_HERETIC_SEARCH_FAILED`, `E_EXPORT_ADDED_TRIALS`, `E_EXPORT_TRIAL_MISMATCH`, `E_REPRODUCE_FAILED`, `E_QUALIFY_RUNTIME` |

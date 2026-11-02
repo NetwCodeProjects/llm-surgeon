@@ -4,11 +4,11 @@
 
 | Path | Verified how | Not verified |
 |---|---|---|
-| CLI, config, planning, receipts, resume/fork, locks, manifests, partial exports, parallel stage 08, acceptance record | 540+ CPU unit and integration tests (fake engines; `tests/integration/test_acceptance_record.py` builds a record from a mocked acceptance run) | — |
+| CLI, config, planning, receipts, resume/fork, locks, manifests, partial exports, parallel stage 08, acceptance record | 570+ CPU unit and integration tests (fake engines; `tests/integration/test_acceptance_record.py` builds a record from a mocked acceptance run) | — |
 | Heretic adapter (install, introspection, native config, headless run, study export) | Real pinned Heretic (ARA): tiny model on CPU (WSL2); Qwen3.5-2B on an A100 (2026-10-29) and a B300 (2026-10-31), full 00–10 runs (implementation log) | **Qwen3.8-27B** (memory, runtime, ARA quality): the acceptance run (docs/acceptance.md) |
 | llama.cpp convert/quantize/verify | Real pinned build: CPU (WSL2), CUDA `sm_80` (A100), CUDA `sm_103` (B300); 2B GGUF exports q8_0/iq4_xs loaded on the B300; `llama-server` output byte-identical to `llama-completion -f` on a real Qwen3.5-0.8B GGUF (CPU) | `llama-server` on a GPU; 27B conversion time and size |
 | FP8 (llm-compressor + vLLM) | FP8_BLOCK of Qwen3.5-2B loaded natively by vLLM 0.32.0 on a B300 (representative test); weight-only fallback on the A100 | 27B; `vllm_enforce_eager` start-up time |
-| Publishing (`--publish`) | Fake-upload tests (plan, token, corrupted upload, unready run, forks); one real private upload of the 0.8B acceptance results to the owner's account, every file matched remotely (implementation log) | — |
+| Publishing (start-of-run choice, `--publish`) | Fake-upload tests (questions, picker by bit level, login, taken names, format subsets, plan, token, corrupted upload, unready run, forks); one real private upload of the 0.8B acceptance results to the owner's account, every file matched remotely; the login, permission and repository checks against the real Hub with the owner's OAuth login (implementation log) | the interactive `hf auth login` prompt itself (it is huggingface_hub's) |
 | Lambda Stack profile | It differs from the ubuntu profile only in reusing host-installed tools instead of installing them; both go through the same probes (driver, nvcc, build tools), covered by unit tests with simulated hosts | — (no separate image test, by decision) |
 
 No result for the 27B model is claimed until the acceptance record exists. `tests/gpu/` and
@@ -16,6 +16,11 @@ docs/acceptance.md contain the commands to obtain it.
 
 ## Functional limits
 
+- **Abliteration needs full-precision weights.** Heretic changes the weights through transformers, so the input
+  is a Hugging Face model in safetensors (`model.url` or `model.local_path`); a GGUF cannot be abliterated, and
+  every run produces a BF16 master first (publishing it is optional, `publish.formats`). An abliterated Q4
+  comes from quantizing that master, which is also better than converting an existing Q4 back: that would keep
+  the Q4's rounding loss and add the export's on top. Not supported.
 - **No compatibility resolver** (by design): unsupported architectures fail inside the tools; the
   platform reports their errors.
 - **Exact reproduction of `coder3101/Qwen3.8-27B-heretic-ara` is impossible** (no reproduce.json,

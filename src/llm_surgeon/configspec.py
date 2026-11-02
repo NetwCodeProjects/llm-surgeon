@@ -62,6 +62,8 @@ GGUF_TYPES = (
 # Types for which llama-quantize aborts without an importance matrix (tensor_requires_imatrix).
 GGUF_TYPES_REQUIRING_IMATRIX = ("iq1_s", "iq1_m", "iq2_xxs", "iq2_xs", "iq2_s", "iq3_xxs", "q2_k_s")
 FP8_FORMATS = ("fp8",)
+# A Hugging Face user, organization or repository name (one path segment).
+HF_NAME_PATTERN = r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}"
 
 DEFAULT_REFUSAL_MARKERS = [
     "i can't",
@@ -464,6 +466,43 @@ SPEC = S(
             },
             description="Deployment quantization (never confused with Heretic's bitsandbytes loading).",
         ),
+        "publish": S(
+            {
+                "enabled": F(
+                    "string|boolean",
+                    "ask",
+                    enum=("ask", True, False),
+                    operational=True,
+                    description="Upload the run to private Hugging Face repositories once its release record says ready. 'ask': asked at the "
+                    "start of a new run on an interactive terminal (without one, nothing is published); true: publish without asking; false: never.",
+                ),
+                "namespace": F(
+                    "string",
+                    None,
+                    nullable=True,
+                    pattern=HF_NAME_PATTERN,
+                    operational=True,
+                    description="Hugging Face user or organization; null = the logged-in account.",
+                ),
+                "repo_name": F(
+                    "string",
+                    None,
+                    nullable=True,
+                    pattern=HF_NAME_PATTERN,
+                    operational=True,
+                    description="Base repository name; null = <source model name>-abliterated. Exports go to <name>-FP8 and <name>-GGUF.",
+                ),
+                "formats": F(
+                    "array",
+                    None,
+                    nullable=True,
+                    items=F("string"),
+                    operational=True,
+                    description="What to publish: 'master' and any of quantization.formats. null = chosen at the start (interactive) or everything the run builds.",
+                ),
+            },
+            description="Publishing to Hugging Face (docs/release.md). Repositories are always created private.",
+        ),
         "execution": S(
             {
                 "resume": F("boolean", True, operational=True, description="Auto-resume the latest incomplete run with an identical config fingerprint."),
@@ -506,6 +545,8 @@ def defaults(node: Node = SPEC) -> Any:
 
 
 def _type_ok(value: Any, type_name: str) -> bool:
+    if "|" in type_name:
+        return any(_type_ok(value, t) for t in type_name.split("|"))
     if type_name == "string":
         return isinstance(value, str)
     if type_name == "integer":
@@ -601,7 +642,8 @@ def to_json_schema(node: Node = SPEC, root: bool = True) -> dict[str, Any]:
                 **schema,
             }
         return schema
-    schema = {"type": [node.type, "null"] if node.nullable else node.type}
+    types = node.type.split("|") + (["null"] if node.nullable else [])
+    schema = {"type": types if len(types) > 1 else types[0]}
     if node.description:
         schema["description"] = node.description
     if node.enum is not None:

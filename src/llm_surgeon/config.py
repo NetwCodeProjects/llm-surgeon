@@ -257,6 +257,24 @@ def _cross_validate(data: dict[str, Any], *, require_model: bool) -> None:
         raise PipelineError(ExitCode.CONFIG, "E_CONFIG_INVALID", "quantization.input=path requires quantization.input_path")
     if quant["input"] == "selected_master" and not data["abliteration"]["enabled"] and quant["enabled"]:
         quant["input"] = "source"
+    pub = data["publish"]
+    if pub["formats"] is not None:
+        built = ["master", *(formats if quant["enabled"] else [])]
+        chosen: list[str] = []
+        for raw in pub["formats"]:
+            name = raw.strip().lower()
+            if name not in built:
+                raise PipelineError(
+                    ExitCode.CONFIG,
+                    "E_PUBLISH_FORMAT",
+                    f"publish.formats lists {raw!r}, which this run does not build",
+                    hint=f"Choose from {built}; a format is built when quantization.formats lists it.",
+                )
+            if name not in chosen:
+                chosen.append(name)
+        if not chosen:
+            raise PipelineError(ExitCode.CONFIG, "E_PUBLISH_FORMAT", "publish.formats is empty", hint="Set publish.enabled: false to publish nothing.")
+        pub["formats"] = chosen
 
     sel = data["selection"]
     for gate, key in configspec.GATE_CONFIG_KEYS.items():

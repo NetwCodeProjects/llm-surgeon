@@ -90,14 +90,20 @@ pipeline finds it) can target the B300's `sm_103`. The release procedure is in [
 
 ### Publish to Hugging Face
 
+`./main.sh --yes` on a terminal asks before the first stage whether to publish the run when it is ready. On
+yes it logs you in if needed (`hf auth login`, from the project's own environment), asks the repository name
+and, unless `publish.formats` in the config already lists them, lets you pick the formats by bit level
+(16-bit master, 8-bit FP8/Q8_0, … 4-bit Q4_K_M/IQ4_XS/…). Login problems and taken names stop the run
+in its first minute, not after hours. `--yes` does not answer the question, and without a terminal nothing
+is published.
+
 ```bash
-./main.sh --publish RUN_ID --hf-namespace <you>                     # the plan: three private repositories, nothing uploaded
-HF_TOKEN=... ./main.sh --publish RUN_ID --hf-namespace <you> --confirm-publish <token> --yes
+./main.sh --publish RUN_ID          # a finished run later: the plan, then "Upload now?" on a terminal
 ```
 
-Only a run whose release record is `ready` is uploaded (BF16 master, FP8, GGUF with the vision projector),
-each repository private, with a generated model card and every file checked remotely. Making them public
-is your decision on Hugging Face ([docs/release.md](docs/release.md)).
+Only a run whose release record is `ready` is uploaded, each repository private (`<name>`, `<name>-FP8`,
+`<name>-GGUF`, as far as their formats are published), with a generated model card and every file checked
+remotely. Making them public is your decision on Hugging Face ([docs/release.md](docs/release.md)).
 
 ### Plain Ubuntu
 

@@ -46,9 +46,10 @@ class HostProbe:
         return sys.platform
 
     def code_revision(self, repo: Path) -> dict[str, Any]:
-        """The git commit of the checkout that runs (null outside a git checkout or without git)."""
+        """The git commit of the checkout that runs (null outside a git checkout or without git). Edits under
+        configs/ do not make it dirty: users edit configs/pipeline.yaml, and every run stores its resolved config."""
         commit = self._run(["git", "-C", str(repo), "rev-parse", "HEAD"])
-        status = self._run(["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=no"]) if commit else None
+        status = self._run(["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=no", "--", ".", ":(exclude)configs"]) if commit else None
         return {"git_commit": commit.strip() if commit else None, "git_dirty": bool(status.strip()) if status is not None else None}
 
     def os_release(self) -> dict[str, str]:

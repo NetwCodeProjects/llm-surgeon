@@ -496,3 +496,41 @@ stopped study on that commit. No further local run before the release.
 
 For the release run this means: if the 27B search finds no eligible trial within 180 minutes, nothing is
 promoted or published; `--resume <run> --max-runtime-minutes <larger>` continues the same study, as above.
+
+## 2026-11-02 — Publishing chosen at the start of a run
+
+Owner's design (2026-11-02): publishing is asked once, after `./main.sh --yes`, before the first stage, so a
+four-hour run never waits for an answer; the formats are chosen in the config or picked at the start by bit
+level, then by format; our release choices (BF16 master, FP8, Q4_K_M) are the example values, not the only
+ones. Implemented in `publish_setup.py` (questions, checks, end-of-run upload), `formats.py` (the catalogue by
+bit level, with size estimates), `adapters/hf_account.py` (login through the control environment's pinned
+`huggingface_hub` and its `hf` command; nothing is installed), and the `publish:` config section
+(`enabled: ask|true|false`, `namespace`, `repo_name`, `formats`; all operational, so answers never change a stage
+key or the auto-resume fingerprint). `--publish RUN` keeps working for a finished run, now with the run's choices
+as defaults, the login as the default namespace and an "Upload now?" question on a terminal.
+
+Checked against the real Hub (read-only, the owner's login, huggingface_hub 2.3.0 in WSL): `hf` found in `.venv`;
+the OAuth login accepted, with its expiry; a made-up token returns 401 (treated as no login); repository states
+`missing`, `content` (the private acceptance test repositories) and `public` (Qwen/Qwen3.5-0.8B); the parameter
+count 873,438,784 for the 0.8B from `model_info(expand=["safetensors"])`.
+
+Findings:
+
+46. **Editing `configs/pipeline.yaml` made every run unpublishable.** `code_revision` counted any tracked change
+    as dirty, and the release record fails a dirty checkout, while the documented way to use the tool is to
+    edit that file. `git status` now excludes `configs/`: the run stores its resolved config, and the profiles,
+    Heretic templates and baselines it reads are hashed into its records.
+47. **The release record judged exports that were not being published.** It now takes the published export
+    roles (`build_record(..., roles=)`); an export that is built but not published no longer blocks the others,
+    and a published export with no verification or comparison result fails instead of being skipped.
+48. **OAuth logins report no token role** (`whoami` gives `auth.type: oauth` and `expiresAt` only). Write access
+    is therefore checked by role only for access tokens (`read` refused; fine-grained needs `repo.write` on the
+    namespace); for OAuth it is confirmed when the repositories are created. The expiry is shown, with a warning
+    under two days, since the upload comes hours after the check.
+49. **`--publish` of an unknown run ended with a bare `SystemExit`** from the record's RunView; it is now
+    `E_RUN_NOT_FOUND` (exit 7).
+
+Deviation from the sample the owner approved: a GGUF type that needs an importance matrix is refused in the
+picker with the reason, instead of offering "the default calibration text". The project pins no calibration
+text, and inventing one is not a choice the picker should make; `quantization.gguf.imatrix_dataset` enables
+those types. The ternary types TQ1_0/TQ2_0 are left out of the picker (they suit ternary-trained models).

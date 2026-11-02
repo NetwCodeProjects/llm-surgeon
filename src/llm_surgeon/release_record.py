@@ -218,16 +218,22 @@ def run_complete_check(view: RunView) -> dict[str, Any]:
     return check("run_complete", title, "passed" if ok else "failed", f"run {outcome}" + (f"; stages {bad}" if bad else ""), [str(path)], outcome=outcome)
 
 
-def loading_check(view: RunView, strict: bool = True) -> dict[str, Any]:
+def loading_check(view: RunView, strict: bool = True, roles: set[str] | None = None) -> dict[str, Any]:
     """``strict``: every export must have loaded natively. Without it (local acceptance on a CPU host) an export
-    whose loader is switched off by configuration (``verify_backend=none``) is listed but does not fail the check."""
+    whose loader is switched off by configuration (``verify_backend=none``) is listed but does not fail the check.
+    ``roles``: judge only these exports (the ones being published); an empty set passes."""
     title = "Every export loads in its runtime (stage 09)"
+    if roles is not None and not roles:
+        return check("export_loading", title, "passed", "no exports are published")
     verification = view.metric("verification.json")
     if verification is None:
         return check("export_loading", title, "unresolved", "no metrics/verification.json")
     rows, bad = {}, []
+    for role in sorted(set(roles or ()) - set(verification)):  # published but never verified
+        rows[role] = {"passed": None, "missing": True}
+        bad.append(role)
     for role, item in sorted(verification.items()):
-        if not role.startswith("export:"):
+        if not role.startswith("export:") or (roles is not None and role not in roles):
             continue
         smoke = item.get("smoke") or {}
         rows[role] = {
@@ -253,14 +259,18 @@ def loading_check(view: RunView, strict: bool = True) -> dict[str, Any]:
     return check("export_loading", title, "failed" if bad else "passed", detail, [str(view.dir / "metrics" / "verification.json")], exports=rows)
 
 
-def comparison_check(view: RunView, strict: bool = True) -> dict[str, Any]:
+def comparison_check(view: RunView, strict: bool = True, roles: set[str] | None = None) -> dict[str, Any]:
     """``strict``: every export must pass. Without it (local acceptance on a CPU host) an export whose runtime is
-    switched off by configuration (``verify_backend=none``) is necessarily unmeasured; it is listed, not failed."""
+    switched off by configuration (``verify_backend=none``) is necessarily unmeasured; it is listed, not failed.
+    ``roles``: judge only these exports (the ones being published); an empty set passes."""
     title = "Master/export comparison (stage 09)"
+    if roles is not None and not roles:
+        return check("comparison", title, "passed", "no exports are published")
     doc = view.metric("comparison.json")
     if doc is None:
         return check("comparison", title, "unresolved", "no metrics/comparison.json (comparison disabled or no exports)")
-    exports = doc.get("exports", {})
+    exports = {r: e for r, e in doc.get("exports", {}).items() if roles is None or r in roles}
+    exports.update({r: {"outcome": "missing"} for r in roles or () if r not in exports})
     outcomes = {role: e.get("outcome") for role, e in exports.items()}
     off = sorted(
         r for r, e in exports.items() if not strict and e.get("outcome") == "unmeasured" and "verify_backend=none" in (e.get("unmeasured_reason") or "")
@@ -384,8 +394,15 @@ VERDICTS = {"acceptance": ("accepted", "not accepted"), "release": ("ready", "no
 
 
 def build_record(
-    workspace: Path, run_id: str, setup_id: str | None = None, reuse_id: str | None = None, expect_model: str | None = None, kind: str = "acceptance"
+    workspace: Path,
+    run_id: str,
+    setup_id: str | None = None,
+    reuse_id: str | None = None,
+    expect_model: str | None = None,
+    kind: str = "acceptance",
+    roles: set[str] | None = None,
 ) -> dict[str, Any]:
+    """``roles`` (release records): the exports being published; only those are judged (None = every export)."""
     view = RunView(workspace, run_id)
     setup = RunView(workspace, setup_id) if setup_id else None
     reuse = RunView(workspace, reuse_id) if reuse_id else None
@@ -408,8 +425,8 @@ def build_record(
             run_complete_check(view),
             full_size_check(view, expect_model or (view.config.get("model") or {}).get("url")),
             promotion_check(view),
-            loading_check(view, strict=True),
-            comparison_check(view),
+            loading_check(view, strict=True, roles=roles),
+            comparison_check(view, roles=roles),
             *extra,
         ]
     else:

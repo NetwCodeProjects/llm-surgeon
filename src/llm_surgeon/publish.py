@@ -1,14 +1,17 @@
-"""``--publish``: upload a ready run's master and exports to Hugging Face as private repositories (docs/release.md).
+"""Upload a ready run's master and exports to Hugging Face as private repositories (docs/release.md).
 
-Never automatic and never public: the run must pass its release record (llm_surgeon.release_record), the
-first invocation only prints the plan and a confirmation token, and the upload runs only with that token
-and ``--yes``. Repositories are created private; making them public is the owner's decision on Hugging
-Face. Files are re-hashed against their manifests right before the upload and checked against the
-repository afterwards (sha256 of LFS/Xet files, git blob id of small files). Each published artifact gets a
-``publication`` assessment record.
+Two ways in: a run that opted in at its start (llm_surgeon.publish_setup) uploads when it finishes, and
+``--publish RUN`` uploads a finished run later. Never public, and never without the owner's consent: the
+run must pass its release record (llm_surgeon.release_record), and ``--publish`` first prints the plan; it
+uploads after a "y" on an interactive terminal, or with the plan's confirmation token and ``--yes``.
+Repositories are created private; making them public is the owner's decision on Hugging Face. Files are
+re-hashed against their manifests right before the upload and checked against the repository afterwards
+(sha256 of LFS/Xet files, git blob id of small files). Each published artifact gets a ``publication``
+assessment record.
 
 Repositories: ``<namespace>/<name>`` (BF16 master), ``<name>-FP8``, ``<name>-GGUF`` (every GGUF type and
-the vision projector). ``<name>`` defaults to ``<source model name>-abliterated``.
+the vision projector), each only when one of its formats is published (``publish.formats``). ``<name>``
+defaults to ``<source model name>-abliterated``.
 """
 
 from __future__ import annotations
@@ -134,12 +137,26 @@ def stable_record(record: dict[str, Any]) -> dict[str, Any]:
     return {**{k: v for k, v in record.items() if k != "generated_utc"}, "measurements": measurements}
 
 
-def build_plan(workspace: Path, run_id: str, namespace: str, name: str | None) -> tuple[dict[str, Any], dict[str, Any]]:
+def published_formats(config: dict[str, Any], formats: list[str] | None = None) -> list[str]:
+    """``formats``, else the run's ``publish.formats``, else the master and every format the run built."""
+    quant = config.get("quantization") or {}
+    built = list(quant.get("formats") or []) if quant.get("enabled") else []
+    return list(formats or (config.get("publish") or {}).get("formats") or ["master", *built])
+
+
+def build_plan(workspace: Path, run_id: str, namespace: str, name: str | None, formats: list[str] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     """The upload plan (what the confirmation token covers) and the generated files to stage."""
     for label, value in (("--hf-namespace", namespace), ("--repo-name", name)):
         if value is not None and not NAME_RE.match(value):
             raise PipelineError(ExitCode.USAGE, "E_PUBLISH_NAME", f"{label} {value!r} is not a valid Hugging Face name")
-    record = R.build_record(workspace, run_id, kind="release")
+    run_config = R.RunView(workspace, run_id).config
+    quant = run_config.get("quantization") or {}
+    chosen = published_formats(run_config, formats)
+    built = configured_export_roles(quant.get("formats")) if quant.get("enabled") else set()
+    wanted = configured_export_roles([f for f in chosen if f != "master"])
+    if wanted - built:
+        raise PipelineError(ExitCode.USAGE, "E_PUBLISH_FORMAT", f"Run {run_id} did not build {sorted(wanted - built)}", hint=f"It built {sorted(built)}.")
+    record = R.build_record(workspace, run_id, kind="release", roles=wanted)
     record_path = R.write_record(record, workspace / "runs" / run_id / "reports")
     if record["verdict"] != "ready":
         raise PipelineError(
@@ -155,12 +172,10 @@ def build_plan(workspace: Path, run_id: str, namespace: str, name: str | None) -
     base = name or f"{facts['source']['repo'].split('/')[-1]}-abliterated"
     base_repo = f"{namespace}/{base}"
     repos: dict[str, dict[str, Any]] = {}
-    quant = view.config.get("quantization") or {}
-    wanted = configured_export_roles(quant.get("formats")) if quant.get("enabled") else set()
     for role in sorted(artifacts):
         kind = repo_kind(role)
-        if kind is None or (kind != "master" and role not in wanted):
-            continue  # an export this run's configuration does not produce (inherited by a fork)
+        if kind is None or (kind == "master" and "master" not in chosen) or (kind != "master" and role not in wanted):
+            continue  # not chosen, or an export this run's configuration does not produce (inherited by a fork)
         repo = repos.setdefault(kind, {"repo_id": f"{base_repo}{SUFFIX[kind]}", "kind": kind, "roles": [], "artifact_ids": [], "files": {}})
         manifest = artifacts[role]["manifest"]
         repo["roles"].append(role)
@@ -186,7 +201,7 @@ def build_plan(workspace: Path, run_id: str, namespace: str, name: str | None) -
             for r in repo["roles"]
         }
         extra["llm-surgeon/release-record.json"] = json.dumps(stable_record(record), indent=2, sort_keys=True).encode()
-        card = model_card.render(kind, repo["repo_id"], base_repo, repo["roles"], files, facts).encode()
+        card = model_card.render(kind, repo["repo_id"], base_repo if "master" in repos else None, repo["roles"], files, facts).encode()
         extra["README.md"] = card
         generated[repo["repo_id"]] = extra
         for path, data in extra.items():
@@ -204,16 +219,18 @@ def plan_token(plan: dict[str, Any]) -> str:
     return sha256_obj({"run": plan["run_id"], "repos": [[r["repo_id"], [[f["path"], f["sha256"]] for f in r["files"]]] for r in plan["repos"]]})[:16]
 
 
-def print_plan(plan: dict[str, Any], token: str, namespace: str, name: str | None, workspace: Path, stream) -> None:
+def print_plan(plan: dict[str, Any], token: str, namespace: str, name: str | None, workspace: Path, stream, command: bool = True) -> None:
     stream.write(f"Publish plan for run {plan['run_id']} (nothing uploaded). Every repository is created PRIVATE.\n")
     for repo in plan["repos"]:
         total = sum(f["size_bytes"] for f in repo["files"])
         stream.write(f"\n  https://huggingface.co/{repo['repo_id']}  ({', '.join(repo['roles'])}; {len(repo['files'])} files, {model_card.human(total)})\n")
         for f in repo["files"]:
             stream.write(f"    {f['path']:<60} {model_card.human(f['size_bytes']):>10}\n")
+    if not command:
+        return
     flag = f" --repo-name {name}" if name else ""
     stream.write(
-        f"\nTo upload exactly this plan (with $HF_TOKEN set): ./main.sh --output-dir {workspace} --publish {plan['run_id']} "
+        f"\nTo upload exactly this plan (logged in, or with $HF_TOKEN set): ./main.sh --output-dir {workspace} --publish {plan['run_id']} "
         f"--hf-namespace {namespace}{flag} --confirm-publish {token} --yes\n"
     )
 
@@ -263,31 +280,61 @@ def heretic_tools(workspace: Path, scripts_dir: Path, log_dir: Path, probe):
     return runner, manager.get("heretic")
 
 
-def publish(workspace: Path, run_id: str, namespace: str, name: str | None, confirm: str | None, yes: bool, services, stream=sys.stdout) -> int:
+def publish(workspace: Path, run_id: str, namespace: str | None, name: str | None, confirm: str | None, yes: bool, services, stream=sys.stdout) -> int:
+    """``--publish RUN``: the plan; then the upload after a "y" on a terminal, or with the plan's token and ``--yes``.
+    Namespace, name and formats default to the run's ``publish.*`` choices; the namespace then to the login."""
+    if not (workspace / "runs" / run_id / "configs" / "resolved-config.json").is_file():
+        raise PipelineError(ExitCode.DEPENDENCY, "E_RUN_NOT_FOUND", f"No run {run_id} under {workspace / 'runs'}", hint="List runs with ./main.sh --list-runs.")
+    run_config = R.RunView(workspace, run_id).config
+    pub = run_config.get("publish") or {}
+    token_env = (run_config.get("model") or {}).get("hf_token_env") or "HF_TOKEN"
+    account = services.account_factory()
+    hf_token = account.token(token_env)
+    namespace = namespace or pub.get("namespace")
+    if namespace is None:
+        who = account.whoami(hf_token) if hf_token else None
+        if who is None:
+            raise PipelineError(
+                ExitCode.CONFIG,
+                "E_HF_TOKEN_MISSING",
+                "No Hugging Face login to take the namespace from",
+                hint="Pass --hf-namespace, or log in: .venv/bin/hf auth login",
+            )
+        namespace = who["name"]
+    name = name or pub.get("repo_name")
     plan, generated = build_plan(workspace, run_id, namespace, name)
     token = plan_token(plan)
+    interactive = confirm is None and services.interactive()
     if confirm is None:
-        print_plan(plan, token, namespace, name, workspace, stream)
-        return int(ExitCode.OK)
-    if confirm != token:
+        print_plan(plan, token, namespace, name, workspace, stream, command=not interactive)
+        if not interactive:
+            return int(ExitCode.OK)
+        from .publish_setup import Prompter  # noqa: PLC0415
+
+        stream.write("\n")
+        if not Prompter(services, stream).yes_no("Upload now?", False):
+            return int(ExitCode.OK)
+    elif confirm != token:
         raise PipelineError(
             ExitCode.USAGE,
             "E_PUBLISH_TOKEN",
             "Publish token does not match the current plan",
             hint="Run --publish without --confirm-publish to review the plan.",
         )
-    if not yes:
+    elif not yes:
         raise PipelineError(ExitCode.CONFIRMATION_REQUIRED, "E_CONFIRMATION_REQUIRED", "Uploading needs --yes in addition to the confirmation token")
-    view = R.RunView(workspace, run_id)
-    token_env = (view.config.get("model") or {}).get("hf_token_env") or "HF_TOKEN"
-    hf_token = os.environ.get(token_env)
     if not hf_token:
         raise PipelineError(
             ExitCode.CONFIG,
             "E_HF_TOKEN_MISSING",
-            f"${token_env} is not set",
-            hint="Export a Hugging Face token with write access; it is never written to disk.",
+            f"No Hugging Face login (${token_env} is not set and there is no stored login)",
+            hint="Log in with .venv/bin/hf auth login, or export a write token; it is never written by this project.",
         )
+    return upload(workspace, run_id, plan, generated, hf_token, services, stream)
+
+
+def upload(workspace: Path, run_id: str, plan: dict[str, Any], generated: dict[str, dict[str, bytes]], hf_token: str, services, stream) -> int:
+    """Stage, upload, check every file remotely and record a ``publication`` assessment per artifact."""
     folders = stage(workspace, plan, generated)
     log_dir = workspace / "runs" / run_id / "logs" / "publish"
     runner, record = heretic_tools(workspace, services.scripts_dir, log_dir, services.probe_factory(True))

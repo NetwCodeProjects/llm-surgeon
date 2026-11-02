@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .adapters.hf_account import HubAccount
 from .adapters.hf_hub import HubClient
 from .artifacts.manifest import ArtifactRegistry
 from .banner import gpu_label
@@ -63,6 +64,10 @@ class Services:
     confirm: Callable[[str], bool] | None = None
     uv_executable: str | None = None
     stdout: Any = None
+    # Publishing questions (publish_setup): whether a person answers at a terminal, the answers in tests, the HF login.
+    interactive: Callable[[], bool] = lambda: sys.stdin is not None and sys.stdin.isatty()
+    ask: Callable[[str], str] | None = None
+    account_factory: Callable[[], Any] = lambda: HubAccount()
 
 
 @dataclass
@@ -342,6 +347,19 @@ class Orchestrator:
             return self.dry_run(config, options)
         run_id, config, parent, how = self._prepare_run(config, options, logger)
         workspace = Path(config.get("storage.root"))
+        stage_ids = selected_stage_ids(options)
+        if not options.setup_only:
+            from . import publish_setup  # noqa: PLC0415
+
+            config = publish_setup.at_start(
+                config,
+                run_id=run_id,
+                how=how,
+                stage_ids=stage_ids,
+                cli_formats="quantization.formats" in options.cli_overrides,
+                services=self.services,
+                stream=self.stream,
+            )
         involves_model = not options.setup_only
         notice = (COMPATIBILITY_NOTICE + "\n\n") if involves_model else ""
         confirm(
@@ -363,10 +381,20 @@ class Orchestrator:
             if how == "fork" and parent:
                 self._seed_fork(run, workspace / "runs" / parent)
             logger.info("run.start", f"Run {run_id} ({how}); workspace {workspace}", config_hash=config.config_hash)
-            return self._run_stages(run, options)
+            if config.get("publish.enabled") is True:
+                logger.info(
+                    "run.publish", f"Publishing when ready: {config.get('publish.namespace')}/{config.get('publish.repo_name')} {config.get('publish.formats')}"
+                )
+            code = self._run_stages(run, options)
         finally:
             self._restore_signals(previous_handlers)
             lock.release()
+        if code != int(ExitCode.OK) or options.setup_only:
+            return code
+        from . import publish_setup  # noqa: PLC0415
+
+        published = publish_setup.at_end(run, stage_ids, self.services, self.stream)
+        return code if published is None else published
 
     def _persist_config(self, run: Run, how: str) -> None:
         cfg_dir = run.run_dir / "configs"

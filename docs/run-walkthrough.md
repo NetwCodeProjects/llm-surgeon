@@ -34,9 +34,16 @@ is `runs/<run id>/` with `logs/`, `receipts/`, `configs/`, `metrics/`, `checkpoi
 4. **Which run.** A run with the same configuration that did not finish is resumed automatically; otherwise
    a new run id is made (e.g. `20261101T043848Z-a99cc9`). `--resume RUN_ID` continues a named run;
    `--fork` starts a new run that reuses its parent's still-valid work.
-5. **Confirmation.** The compatibility notice and what the run may download and install. `--yes`
+5. **Publishing (new runs, on a terminal).** "Publish to Hugging Face when the run is ready?" With
+   `publish.enabled: ask` (the default) a person answers it; `--yes` does not, and without a terminal it is
+   not asked (nothing is published). On yes: the login (`hf auth login` runs when there is none), the
+   repository name, the formats by bit level when `publish.formats` is null, and the checks that would
+   otherwise fail hours later (token permissions, taken names, formats that cannot pass the release check
+   here, uncommitted code); then a summary to confirm. The answers are saved with the run
+   ([release.md](release.md#publishing-is-chosen-when-the-run-starts)).
+6. **Confirmation.** The compatibility notice and what the run may download and install. `--yes`
    acknowledges it; without a terminal and without `--yes` the run stops (exit 15).
-6. **Run folder.** The resolved configuration is saved (`configs/resolved-config.json`, `.yaml` and its
+7. **Run folder.** The resolved configuration is saved (`configs/resolved-config.json`, `.yaml` and its
    sha256), the run is locked so a second process cannot run it at the same time, and Ctrl-C is armed: the
    first press stops gracefully after the current step cleans up, a second press aborts.
 
@@ -242,8 +249,11 @@ The summary table lists every stage with its outcome and duration, followed by t
 code is 0 when everything succeeded. Otherwise it identifies the failing area (the table in
 [cli.md](cli.md#exit-codes)); 130 means interrupted.
 
-Publishing is not part of the run. `./main.sh --publish RUN_ID --hf-namespace <you>` checks the run's
-release record and shows the upload plan ([release.md](release.md)).
+**Publishing**, when it was chosen at the start: the release record is computed for the formats being
+published; only if it says `ready` are the repositories created (private), uploaded and every file checked
+remotely. Otherwise nothing is uploaded and the exit code says why (9 when the record is not ready). A run that
+did not ask (no terminal) prints the command to publish it later: `./main.sh --publish RUN_ID`
+([release.md](release.md)).
 
 ## When something goes wrong
 

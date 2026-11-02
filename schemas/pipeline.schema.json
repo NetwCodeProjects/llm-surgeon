@@ -956,6 +956,52 @@
       "additionalProperties": false,
       "description": "Deployment quantization (never confused with Heretic's bitsandbytes loading)."
     },
+    "publish": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": [
+            "string",
+            "boolean"
+          ],
+          "description": "Upload the run to private Hugging Face repositories once its release record says ready. 'ask': asked at the start of a new run on an interactive terminal (without one, nothing is published); true: publish without asking; false: never.",
+          "enum": [
+            "ask",
+            true,
+            false
+          ],
+          "default": "ask"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Hugging Face user or organization; null = the logged-in account.",
+          "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,95})$"
+        },
+        "repo_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Base repository name; null = <source model name>-abliterated. Exports go to <name>-FP8 and <name>-GGUF.",
+          "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,95})$"
+        },
+        "formats": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "What to publish: 'master' and any of quantization.formats. null = chosen at the start (interactive) or everything the run builds.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "Publishing to Hugging Face (docs/release.md). Repositories are always created private."
+    },
     "execution": {
       "type": "object",
       "properties": {

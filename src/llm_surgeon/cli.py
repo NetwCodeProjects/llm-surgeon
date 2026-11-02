@@ -110,10 +110,16 @@ def build_parser() -> argparse.ArgumentParser:
     info.add_argument("--cleanup", action="store_true", help="show (dry-run) what can be deleted safely; never sources or finalized exports")
     info.add_argument("--confirm-cleanup", metavar="TOKEN", help="with --cleanup: delete exactly the reviewed plan")
     pub = p.add_argument_group("publishing (docs/release.md)")
-    pub.add_argument("--publish", metavar="RUN_ID", help="show the plan to upload a ready run to private Hugging Face repositories")
-    pub.add_argument("--hf-namespace", metavar="NAME", help="with --publish: your Hugging Face user or organization")
-    pub.add_argument("--repo-name", metavar="NAME", help="with --publish: base repository name (default <source model>-abliterated)")
-    pub.add_argument("--confirm-publish", metavar="TOKEN", help="with --publish and --yes: upload exactly the reviewed plan")
+    pub.add_argument(
+        "--publish", metavar="RUN_ID", help="show the plan to upload a finished run to private Hugging Face repositories (then asks, on a terminal)"
+    )
+    pub.add_argument(
+        "--hf-namespace", metavar="NAME", help="with --publish: Hugging Face user or organization (default: the run's publish.namespace, else the login)"
+    )
+    pub.add_argument(
+        "--repo-name", metavar="NAME", help="with --publish: base repository name (default: the run's publish.repo_name, else <source model>-abliterated)"
+    )
+    pub.add_argument("--confirm-publish", metavar="TOKEN", help="with --publish and --yes: upload exactly the reviewed plan without a terminal")
     return p
 
 
@@ -132,8 +138,6 @@ def check_combinations(args: argparse.Namespace, parser: argparse.ArgumentParser
         parser.error("--confirm-cleanup requires --cleanup")
     if (args.hf_namespace or args.repo_name or args.confirm_publish) and not args.publish:
         parser.error("--hf-namespace/--repo-name/--confirm-publish require --publish RUN_ID")
-    if args.publish and not args.hf_namespace:
-        parser.error("--publish requires --hf-namespace")
 
 
 def to_overrides(args: argparse.Namespace) -> dict[str, Any]:
@@ -161,6 +165,7 @@ def to_overrides(args: argparse.Namespace) -> dict[str, Any]:
     if args.quantizations is not None:
         o["quantization.formats"] = [f.strip() for f in args.quantizations.split(",") if f.strip()]
         o["quantization.enabled"] = bool(o["quantization.formats"])
+        o["publish.formats"] = None  # what is published follows the formats given here
     if args.quantize_only:
         o["abliteration.enabled"] = False
         o["quantization.enabled"] = True

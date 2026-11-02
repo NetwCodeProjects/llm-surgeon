@@ -97,10 +97,11 @@ def test_a_run_that_is_not_ready_is_refused(env, monkeypatch):
 
 
 def test_publish_flags_need_each_other(env):
-    for args in (("--hf-namespace", "tester"), ("--publish", "r1")):
-        with pytest.raises(SystemExit) as usage:  # argparse usage error
-            env.run(*args)
-        assert usage.value.code == ExitCode.USAGE
+    with pytest.raises(SystemExit) as usage:  # argparse usage error
+        env.run("--hf-namespace", "tester")
+    assert usage.value.code == ExitCode.USAGE
+    code, out = env.run("--publish", "r1")  # the namespace is optional now (the run's choice, else the login)
+    assert code == ExitCode.DEPENDENCY, out
 
 
 def test_a_fork_that_drops_a_format_neither_verifies_nor_publishes_it(env):

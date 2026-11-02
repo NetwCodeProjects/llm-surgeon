@@ -248,13 +248,53 @@ def fake_hub(tmp_path: Path) -> FakeHub:
     )
 
 
-def fake_services(hub: FakeHub, probe: HostProbe) -> Services:
+class FakeAccount:
+    """Hugging Face login without the network: the token comes only from the environment (never the stored
+    login of whoever runs the tests); repositories live in the fake hub folder hf_publish.py writes to."""
+
+    def __init__(self, hub_dir: Path, orgs: tuple[str, ...] = (), role: str | None = "write", expires: str | None = None) -> None:
+        self.hub_dir, self.orgs, self.role, self.expires = hub_dir, orgs, role, expires
+        self.logins = 0
+        self.login_token: str | None = None  # what `hf auth login` "stores"
+        self.public: set[str] = set()
+
+    def token(self, env_name):
+        import os
+
+        return os.environ.get(env_name or "HF_TOKEN") or self.login_token
+
+    def login(self) -> None:
+        self.logins += 1
+        self.login_token = "hf_fake_login_token"
+
+    def whoami(self, token):
+        if token not in ("hf_fake_write_token", "hf_fake_login_token"):
+            return None
+        auth = {"type": "access_token", "accessToken": {"role": self.role}} if self.role else {"type": "oauth"}
+        if self.expires:
+            auth["expiresAt"] = self.expires
+        return {"name": "tester", "type": "user", "orgs": [{"name": o} for o in self.orgs], "auth": auth}
+
+    def repo_state(self, repo_id, token):
+        if repo_id in self.public:
+            return "public"
+        target = self.hub_dir / repo_id
+        return "content" if target.exists() and any(p.is_file() for p in target.rglob("*")) else "missing"
+
+    def parameter_count(self, repo_id, revision, token):
+        return 27_000_000_000
+
+
+def fake_services(hub: FakeHub, probe: HostProbe, hub_dir: Path | None = None) -> Services:
+    account = FakeAccount(hub_dir or Path("."))
     return Services(
         probe_factory=lambda allow_exec: probe,
         hub_factory=lambda cache, token: hub,
         scripts_dir=FAKE_RUNTIME,
         gpu_query=lambda: None,
         confirm=lambda message: True,
+        interactive=lambda: False,
+        account_factory=lambda: account,
     )
 
 
@@ -271,7 +311,8 @@ class Env:
         monkeypatch.setenv("FAKE_COUNTER_DIR", str(self.counters))
         self.hub = fake_hub(tmp_path)
         self.probe = FakeProbe()
-        self.services = fake_services(self.hub, self.probe)
+        self.services = fake_services(self.hub, self.probe, self.counters / "hub")
+        self.account = self.services.account_factory()
         self.config_path = self.write_config({})
         self.base_args = ["--config", str(self.config_path), "--output-dir", str(self.workspace), "--yes", "--log-level", "warning"]
 
@@ -286,7 +327,10 @@ class Env:
         data = deep_merge(data, {"environment": {"min_free_disk_gb": 0, "disk_buffer_gb": 0}})
         # The mechanics tests use three formats (two GGUF types share an intermediate) and partial exports;
         # configs/pipeline.yaml is the release config (fp8 + q4_k_m, no partial exports), tested on its own.
-        data = deep_merge(data, {"quantization": {"formats": ["fp8", "iq4_xs", "iq3_s"]}, "execution": {"allow_partial_exports": True}})
+        data = deep_merge(
+            data,
+            {"quantization": {"formats": ["fp8", "iq4_xs", "iq3_s"]}, "execution": {"allow_partial_exports": True}, "publish": {"formats": None}},
+        )
         data = deep_merge(data, changes)
         path = self.tmp / name
         path.write_text(yaml.safe_dump(data), encoding="utf-8")

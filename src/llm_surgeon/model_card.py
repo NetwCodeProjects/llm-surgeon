@@ -33,7 +33,9 @@ def pair(counts: dict[str, int] | None) -> str:
     return f"{counts['count']}/{counts['of']}" if counts else "n/a"
 
 
-def front_matter(kind: str, facts: dict[str, Any], base_repo: str) -> str:
+def front_matter(kind: str, facts: dict[str, Any], base_repo: str | None) -> str:
+    """``base_repo``: the published master, or None when only exports are published (then the source model is
+    the base, with no relation: the export is abliterated and quantized, not a plain quantization of it)."""
     source = facts["source"]
     meta: dict[str, Any] = {"license": source.get("license") or "other"}
     if source.get("license_name"):
@@ -43,8 +45,9 @@ def front_matter(kind: str, facts: dict[str, Any], base_repo: str) -> str:
         meta["library_name"] = "transformers"
         tags = ["abliterated", "heretic", "llm-surgeon"]
     else:
-        meta["base_model"] = [base_repo]
-        meta["base_model_relation"] = "quantized"
+        meta["base_model"] = [base_repo or source["repo"]]
+        if base_repo:
+            meta["base_model_relation"] = "quantized"
         if kind == "fp8":
             meta["library_name"] = "transformers"
             tags = ["abliterated", "heretic", "llm-surgeon", "fp8", "compressed-tensors", "vllm"]
@@ -126,7 +129,7 @@ def usage_section(kind: str, repo_id: str, files: list[dict[str, Any]]) -> list[
     ]
 
 
-def render(kind: str, repo_id: str, base_repo: str, roles: list[str], files: list[dict[str, Any]], facts: dict[str, Any]) -> str:
+def render(kind: str, repo_id: str, base_repo: str | None, roles: list[str], files: list[dict[str, Any]], facts: dict[str, Any]) -> str:
     source, prov, opt = facts["source"], facts["provenance"], facts["optimizer"]
     source_link = f"[{source['repo']}](https://huggingface.co/{source['repo']}) (revision `{source['revision'][:12]}`)"
     if kind == "master":
@@ -137,7 +140,12 @@ def render(kind: str, repo_id: str, base_repo: str, roles: list[str], files: lis
         )
     else:
         label = "FP8 (FP8_BLOCK, compressed-tensors)" if kind == "fp8" else "GGUF"
-        title, intro = repo_id.split("/")[-1], f"{label} quantization of [{base_repo}](https://huggingface.co/{base_repo}), the abliterated {source_link}."
+        master = (
+            f"[{base_repo}](https://huggingface.co/{base_repo}), the abliterated {source_link}"
+            if base_repo
+            else f"the abliterated {source_link} (BF16 master not published)"
+        )
+        title, intro = repo_id.split("/")[-1], f"{label} quantization of {master}."
     lines = [
         front_matter(kind, facts, base_repo),
         f"# {title}",
