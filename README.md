@@ -58,11 +58,27 @@ in [docs/limitations.md](docs/limitations.md).
 
 ## Requirements
 
-- Ubuntu 22.04/24.04 (Lambda Stack image or plain Ubuntu). `--help` and `--dry-run` also work elsewhere.
-- Python ≥ 3.10. Either `uv`, or `python3-venv` for the hash-locked bootstrap. PyYAML (`python3-yaml`, preinstalled on most Ubuntu images) for `--dry-run` before bootstrapping.
-- NVIDIA GPU + driver for Heretic / FP8 / vLLM (one B200 or B300 is the reference target; native FP8 checks need compute capability ≥ 8.9, an A100 runs a recorded, non-representative fallback). GGUF-only quantization works on CPU.
-- git, cmake, a C++ compiler for the llama.cpp build (stage 01 can `apt-get` them with `environment.allow_system_packages: true` + `--yes`).
-- Disk: roughly 3–4× the BF16 model size for the full Qwen3.8-27B pipeline (≈ 55 GB source, candidate, GGUF intermediate, exports). Preflight and acquire check real numbers.
+**You provide** (each is checked; a missing one stops the run with the command that installs it):
+
+| Prerequisite | Why / notes |
+|---|---|
+| Linux x86-64: Ubuntu 22.04/24.04 or WSL2 | other distributions are untested; `--help` and `--dry-run` run anywhere with Python |
+| Python ≥ 3.10 with `venv` (`python3-venv`), or `uv` | to create `.venv`; minimal Ubuntu images lack `python3-venv` |
+| git, cmake, `build-essential` | clone Heretic, build llama.cpp. With `environment.allow_system_packages: true` the run installs them itself (`sudo apt-get`) |
+| NVIDIA GPU + driver | real models (the reference is one B200/B300; native FP8 needs compute capability ≥ 8.9). Never installed by the program. Small models run on CPU (`environment.torch_backend: cpu`, as in [the acceptance config](configs/acceptance/local-cpu.yaml)), without the FP8 loader test |
+| CUDA toolkit (`nvcc`), optional | CUDA build of llama.cpp; without it llama.cpp is built for CPU |
+| Disk | about 3–4× the model's BF16 size plus tens of GB for tool environments and caches (the 27B release plans 500 GB); preflight checks it |
+| Network | PyPI, GitHub and Hugging Face |
+| Hugging Face write token, optional | only to publish; public models download without one |
+
+**The program installs** (pinned, inside the repository and the workspace; nothing system-wide):
+
+- `.venv`: the control packages from a hash-locked lock file, including its own `uv` and the `hf` command.
+- Stage 01: one environment per tool (torch, transformers, Heretic, llm-compressor, vLLM) and the llama.cpp build
+  and converter, reused by later runs.
+- The model and datasets at pinned commits, verified file by file.
+
+`--dry-run` before `.venv` exists needs PyYAML (`python3-yaml`, preinstalled on most Ubuntu images).
 
 ## Five-minute quick start
 
