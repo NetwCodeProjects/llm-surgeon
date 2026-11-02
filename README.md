@@ -108,17 +108,9 @@ workspace/
 [Heretic adapter](docs/heretic-adapter.md) · [quantization](docs/quantization.md) · [evaluation](docs/evaluation.md) ·
 [assessments](docs/assessments.md) · [artifact schema](docs/artifact-schema.md) · [security](docs/security-and-trust.md) ·
 [Ubuntu](docs/deployment-ubuntu.md) · [Lambda Stack profile](docs/deployment-lambda.md) · [acceptance](docs/acceptance.md) ·
-[implementation log](docs/implementation-log.md) · [specification](docs/PROJECT_A_AGENT_HANDOFF.md)
+[implementation log](docs/implementation-log.md) · [specification](docs/PROJECT_A_AGENT_HANDOFF.md) · [contributing](CONTRIBUTING.md)
 
-## Development
+## License
 
-```text
-Test:      uv sync --frozen && .venv/bin/python -m pytest
-Schema:    python scripts/generate_schema.py --check
-Real CPU:  REALTOOLS_WS=/tmp/ws python tests/realtools/provision_cpu.py && REALTOOLS_WS=/tmp/ws pytest -m realtools tests/realtools
-GPU:       pytest -m gpu tests/gpu                        (B200/B300; other GPUs need GPU_ALLOW_OTHER=1)
-Record:    python3 scripts/acceptance_record.py --kind release --workspace WS --run RUN
-```
-
-Project B (coding-capability research) is not part of this repository. Third-party licenses:
-[LICENSE-THIRD-PARTY.md](LICENSE-THIRD-PARTY.md) (Heretic is AGPL-3.0).
+The project's own license is not chosen yet. Third-party tools keep theirs ([LICENSE-THIRD-PARTY.md](LICENSE-THIRD-PARTY.md));
+Heretic is AGPL-3.0.
