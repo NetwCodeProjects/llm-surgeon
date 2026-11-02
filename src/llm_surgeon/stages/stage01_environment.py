@@ -7,7 +7,7 @@ from typing import Any
 
 from ..environment import get_profile
 from ..environment.components import component_specs
-from ..errors import ExitCode, PipelineError
+from ..errors import ExitCode, PipelineError, main_command
 from ..fsutil import FileLock, atomic_write_json
 from ..planning import components_for_config
 from .base import Stage, StageContext
@@ -110,7 +110,7 @@ class EnvironmentStage(Stage):
                     ExitCode.ENVIRONMENT,
                     "E_REBOOT_REQUIRED",
                     "NVIDIA driver installed; a reboot is required before GPU stages can run",
-                    hint=f"Reboot manually (sudo reboot), then resume: ./main.sh --resume {run.run_id}. v1 never reboots automatically.",
+                    hint=f"Reboot manually (sudo reboot), then resume: {main_command(run.workspace, '--resume', run.run_id)}. v1 never reboots automatically.",
                 )
 
     def execute(self, ctx: StageContext) -> None:

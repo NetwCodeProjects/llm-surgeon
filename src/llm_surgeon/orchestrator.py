@@ -33,7 +33,7 @@ from .config import (
 )
 from .environment.components import ComponentManager, find_uv
 from .environment.detect import HostProbe
-from .errors import ExitCode, Interrupted, PipelineError
+from .errors import ExitCode, Interrupted, PipelineError, main_command
 from .fsutil import FileLock, atomic_write_json, atomic_write_text, read_json, remove_tree, sha256_obj
 from .stages import STAGES, stage_by_ref
 from .stages.base import (
@@ -503,7 +503,7 @@ class Orchestrator:
                     "E_MISSING_DEPENDENCY",
                     f"Stage {stage.id} ({stage.name}) needs a valid receipt from stage {dep} ({dep_stage.name})"
                     + (f"; it {blocked_by[dep]} in this invocation" if dep in blocked_by else ""),
-                    hint=f"Run it first, e.g. ./main.sh --resume {run.run_id} --from {dep}.",
+                    hint=f"Run it first, e.g. {main_command(run.workspace, '--resume', run.run_id, '--from', dep)}",
                 )
                 return self._finish(run, stage, ctx, started, "", "", dep_keys, BLOCKED, error, None)
             used = stage.components_used(run.config) if dep == "01" else None
@@ -515,7 +515,7 @@ class Orchestrator:
                         ExitCode.DEPENDENCY,
                         "E_COMPONENT_NOT_PROVISIONED",
                         f"Stage {stage.id} needs components {missing} that stage 01 did not provision in this run",
-                        hint=f"Re-run stage 01: ./main.sh --resume {run.run_id} --from 1",
+                        hint=f"Re-run stage 01: {main_command(run.workspace, '--resume', run.run_id, '--from', '1')}",
                     )
                     return self._finish(run, stage, ctx, started, "", "", dep_keys, BLOCKED, error, None)
                 dep_keys[dep] = sha256_obj({c: fingerprints[c] for c in sorted(used)})
@@ -603,7 +603,7 @@ class Orchestrator:
             self._print(f"Report: {report}")
         if error is not None:
             self._print(f"Error: {error}")
-            self._print(f"Resume: ./main.sh --resume {run.run_id}")
+            self._print(f"Resume: {main_command(run.workspace, '--resume', run.run_id)}")
 
     # -- dry run ------------------------------------------------------------------
     def dry_run(self, config: ResolvedConfig, options: RunOptions) -> int:

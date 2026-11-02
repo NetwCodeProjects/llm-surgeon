@@ -7,8 +7,16 @@ bug and exits with ``ExitCode.INTERNAL``.
 
 from __future__ import annotations
 
+import shlex
 from enum import IntEnum
+from pathlib import Path
 from typing import Any
+
+
+def main_command(workspace: Path | str, *args: str) -> str:
+    """A ./main.sh command for a run in ``workspace``: hints are pasted as printed, and a run is only found
+    under its own --output-dir."""
+    return " ".join(["./main.sh", "--output-dir", shlex.quote(str(workspace)), *args])
 
 
 class ExitCode(IntEnum):

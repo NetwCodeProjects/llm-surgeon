@@ -583,3 +583,23 @@ promotes under that threshold, which the run, the release record and the model c
 `--trial-id` is not offered: it exports the trial but stage 07 still fails the gate it misses. Tested end to
 end with the fake engine (`tests/integration/test_no_eligible_trial.py`). docs/release.md still says a failed
 gate is not overridden for the official release; raising it there is the owner's call.
+
+## 2026-11-02 — Continuing a search that found nothing, in another session
+
+The owner asked whether a run that ends with no eligible trial says what to keep to continue elsewhere. It did
+not, and its commands had two faults:
+
+50. **The printed commands left out `--output-dir`.** A run is found only under its own workspace, so on a Pod
+    (`/root/ws`) every pasted `--resume` command failed with `E_RUN_NOT_FOUND`. All run-specific commands
+    (stage 05's hint, "Resume:" after a failure, the missing-dependency and stage 01 hints, the reboot hint, the
+    publishing summary) now come from `errors.main_command(workspace, …)`, which always names it.
+51. **"Search longer" always said `--max-runtime-minutes`.** When every trial ran inside the time limit, more time
+    changes nothing; `abliteration.max_trials` is part of stage 05's key, so `--resume` refuses it
+    (`E_RESUME_CONFIG_CONFLICT`) and a fork is needed. The hint now gives twice the time limit after a budget stop,
+    else `--fork --max-trials` twice the trials; both continue the same study.
+
+The hint is an aligned block (Use closest / Search more / Keep study / Every trial). "Keep study" says to copy
+`runs/<run>` out: with only that directory restored to the same workspace path on a fresh machine, the printed
+command continued the study (`fork-continue` 50, `continue` 50, the first 50 trials unchanged; fake engine,
+`tests/integration/test_no_eligible_trial.py`). Restoring under a different path is not supported:
+`storage.root` (and the cache root derived from it) is stored with the run and is not operational.

@@ -23,7 +23,7 @@ from typing import Any
 from . import configspec
 from . import formats as F
 from .config import PROJECT_ROOT, ResolvedConfig, deep_merge, finalize, overrides_to_tree
-from .errors import ExitCode, PipelineError
+from .errors import ExitCode, PipelineError, main_command
 from .model_card import human
 
 NAME_RE = re.compile(rf"^{configspec.HF_NAME_PATTERN}$")
@@ -395,7 +395,9 @@ def at_start(config: ResolvedConfig, *, run_id: str, how: str, stage_ids: list[s
     else:
         p.say("  Private      : counts toward your Hugging Face private storage; make it public later in each repository's settings")
     if "quantization.formats" in overrides:
-        p.say(f"  These formats differ from the config file: after an interruption continue with ./main.sh --resume {run_id}")
+        p.say(
+            f"  These formats differ from the config file: after an interruption continue with {main_command(config.get('storage.root'), '--resume', run_id)}"
+        )
     if ask_here and not p.yes_no("Continue?", True):
         raise PipelineError(ExitCode.CONFIRMATION_REQUIRED, "E_NOT_CONFIRMED", "Run cancelled at the publishing summary")
     overrides.update(

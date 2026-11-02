@@ -27,7 +27,7 @@ from typing import Any
 from ..adapters import heretic as H
 from ..adapters import heretic_study as HS
 from ..artifacts.safetensors_meta import dtype_summary, tensor_diff, tensor_map
-from ..errors import ExitCode, Interrupted, PipelineError
+from ..errors import ExitCode, Interrupted, PipelineError, main_command
 from ..evaluation.selection import select_trial
 from ..fsutil import atomic_write_json, disk_free_bytes, human_bytes, read_json, remove_tree, sha256_file, sha256_obj
 from .base import Stage, StageContext
@@ -46,26 +46,32 @@ SELECTION_KEYS = (
 )
 
 
-def no_eligible_hint(doc: dict[str, Any], run_id: str, max_refusal: float | None, max_kl: float | None) -> str:
+def no_eligible_hint(doc: dict[str, Any], run_id: str, workspace: Path, config) -> str:
     """The commands for a search that found no trial within the gates. Using the closest trial means raising the
     gate it misses just enough (a fork re-runs selection and export, zero new trials): the master is then
     promoted under that threshold, which the run, the release record and the model card record. A manual
-    --trial-id would export it but still fail that gate at promotion (stage 07)."""
+    --trial-id would export it but still fail that gate at promotion (stage 07). Searching more continues the
+    same study: a longer time limit is operational (--resume); more trials change the stage key (--fork)."""
+    max_refusal, max_kl = config.get("selection.max_optimizer_refusal_rate"), config.get("selection.max_optimizer_kl")
+    max_trials, minutes = config.get("abliteration.max_trials"), config.get("abliteration.max_runtime_minutes")
     rows = doc.get("closest") or []
     row = next((r for r in rows if r.get("pareto_position") is not None), None)  # only Pareto-front trials can be exported
     lines = []
     if row is not None:
         sets = []
         if max_kl is not None and row["kl"] > max_kl:
-            sets.append(f"--set selection.max_optimizer_kl={math.ceil(round(row['kl'] * 1000, 6)) / 1000:g}")
+            sets += ["--set", f"selection.max_optimizer_kl={math.ceil(round(row['kl'] * 1000, 6)) / 1000:g}"]
         if max_refusal is not None and row["refusal_rate"] > max_refusal:
-            sets.append(f"--set selection.max_optimizer_refusal_rate={math.ceil(round(row['refusal_rate'] * 100, 6)) / 100:g}")
-        lines.append(
-            f"to use trial {row['index']} (the closest), raise the gate it misses just enough: "
-            f"./main.sh --resume {run_id} --fork {' '.join(sets)}  (zero new trials; the policy then picks the best trial that passes)"
-        )
-    lines.append(f"to search longer: ./main.sh --resume {run_id} --max-runtime-minutes <more than before>")
-    lines.append(f"every trial's scores: runs/{run_id}/metrics/selection-candidates.json")
+            sets += ["--set", f"selection.max_optimizer_refusal_rate={math.ceil(round(row['refusal_rate'] * 100, 6)) / 100:g}"]
+        command = main_command(workspace, "--resume", run_id, "--fork", *sets)
+        lines.append(f"Use closest:  {command}   (trial {row['index']}'s value becomes the gate; zero new trials)")
+    if minutes and len(doc.get("trials") or []) < max_trials:  # the time limit stopped the search
+        more = main_command(workspace, "--resume", run_id, "--max-runtime-minutes", str(minutes * 2))
+    else:
+        more = main_command(workspace, "--resume", run_id, "--fork", "--max-trials", str(max_trials * 2))
+    lines.append(f"Search more:  {more}   (the same study; only new trials run)")
+    lines.append(f"Keep study:   copy {workspace}/runs/{run_id} out before the machine stops; restore it to the same path to continue")
+    lines.append(f"Every trial:  {workspace}/runs/{run_id}/metrics/selection-candidates.json")
     return "\n        ".join(lines)
 
 
@@ -526,7 +532,7 @@ class AbliterateStage(Stage):
             err = doc["error"]
             hint = err["hint"]
             if err["error_id"] == "E_NO_ELIGIBLE_TRIAL":
-                hint = no_eligible_hint(doc, ctx.run.run_id, config.get("selection.max_optimizer_refusal_rate"), config.get("selection.max_optimizer_kl"))
+                hint = no_eligible_hint(doc, ctx.run.run_id, ctx.run.workspace, config)
             raise PipelineError(ExitCode(err["exit_code"]), err["error_id"], err["message"], hint=hint)
         chosen = doc["chosen"]
         if chosen["ineligible_override"]:

@@ -89,7 +89,10 @@ implemented; if it is added later it must use a separate final holdout.
    `selection-candidates.json` list the three closest trials (smallest relative threshold excess). The hint
    gives the command that uses the closest Pareto-front trial: a fork that raises only the gate it misses,
    to its value rounded up (KL to 3 decimals, refusal rate to 2); selection and export re-run with zero new
-   trials, and the policy picks the best trial that then passes.
+   trials, and the policy picks the best trial that then passes. It also gives the command that searches
+   more in the same study (twice the time limit after a budget stop, else twice the trials, as a fork) and
+   says to keep `runs/<run>`: restored to the same workspace path on a new machine, the study continues
+   from it (`fork-continue`, then `continue`; tested in `tests/integration/test_no_eligible_trial.py`).
 
 ### Manual choice
 
