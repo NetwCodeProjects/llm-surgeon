@@ -13,7 +13,7 @@ commit you are about to run.
 | `<namespace>/<name>-FP8` | FP8_BLOCK (compressed-tensors) for vLLM and other FP8 runtimes | `fp8` |
 | `<namespace>/<name>-GGUF` | every published GGUF type and the F16 vision projector (`mmproj-…`) for llama.cpp | any GGUF type |
 
-The release config publishes `[master, fp8, q4_k_m]`. `<namespace>` is the account you are logged in as
+The release config publishes `[master, fp8, q4_k_m]`, public, without asking (`publish.enabled: true`). `<namespace>` is the account you are logged in as
 unless `publish.namespace` names an organization of yours; `<name>` defaults to `Qwen3.8-27B-abliterated`
 (`<model>-abliterated`; `publish.repo_name` overrides it). Each repository gets a generated model card
 (license and pipeline tag from the source card; results with the kind of each measurement; caveats; file
@@ -23,8 +23,9 @@ published, the export cards name the source model as their base and say the mast
 
 ## Publishing is chosen when the run starts
 
-`./main.sh --yes` on an interactive terminal asks right after the banner, before the first stage, so the run
-never waits for you at the end. `--yes` does not answer this question; without a terminal (a script, a
+The release config answers it (`enabled: true`, `visibility: public`): only the login is checked, and
+`hf auth login` runs when there is none. With `publish.enabled: ask`, `./main.sh --yes` on an interactive
+terminal asks right after the banner, before the first stage, so the run never waits for you at the end. `--yes` does not answer this question; without a terminal (a script, a
 dropped SSH session) nothing is asked and nothing is published.
 
 ```
@@ -137,7 +138,7 @@ export WS=/root/ws
 
 ./main.sh --output-dir $WS --setup-only --yes                 # 1. tools (clean install on a new Pod)
 tmux new -s release
-./main.sh --output-dir $WS --yes                              # 2. answer y: the release run, published when ready
+./main.sh --output-dir $WS --yes                              # 2. the release run, published (public) when ready
 python3 scripts/acceptance_record.py --kind release --workspace $WS --run <run id>   # optional: the record alone
 ```
 

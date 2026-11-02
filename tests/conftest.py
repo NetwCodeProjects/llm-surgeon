@@ -326,7 +326,11 @@ class Env:
         # configs/pipeline.yaml is the release config (fp8 + q4_k_m, no partial exports), tested on its own.
         data = deep_merge(
             data,
-            {"quantization": {"formats": ["fp8", "iq4_xs", "iq3_s"]}, "execution": {"allow_partial_exports": True}, "publish": {"formats": None}},
+            {
+                "quantization": {"formats": ["fp8", "iq4_xs", "iq3_s"]},
+                "execution": {"allow_partial_exports": True},
+                "publish": {"enabled": "ask", "formats": None, "visibility": "ask"},
+            },
         )
         data = deep_merge(data, changes)
         path = self.tmp / name

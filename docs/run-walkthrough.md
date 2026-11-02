@@ -34,8 +34,9 @@ is `runs/<run id>/` with `logs/`, `receipts/`, `configs/`, `metrics/`, `checkpoi
 4. **Which run.** A run with the same configuration that did not finish is resumed automatically; otherwise
    a new run id is made (e.g. `20261101T043848Z-a99cc9`). `--resume RUN_ID` continues a named run;
    `--fork` starts a new run that reuses its parent's still-valid work.
-5. **Publishing (new runs, on a terminal).** "Publish to Hugging Face when the run is ready?" With
-   `publish.enabled: ask` (the default) a person answers it; `--yes` does not, and without a terminal it is
+5. **Publishing (new runs).** The release config sets `publish.enabled: true` and `visibility: public`: only the
+   login is checked (`hf auth login` runs when there is none), then the summary. With `publish.enabled: ask`
+   (the built-in default) a terminal asks "Publish to Hugging Face when the run is ready?" and a person answers it; `--yes` does not, and without a terminal it is
    not asked (nothing is published). On yes: the login (`hf auth login` runs when there is none), the
    repository name, private or public, the formats by bit level when `publish.formats` is null, and the checks that would
    otherwise fail hours later (token permissions, taken names, formats that cannot pass the release check

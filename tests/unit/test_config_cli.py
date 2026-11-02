@@ -33,6 +33,7 @@ def test_shipped_configs_resolve():
     release = build_config(ROOT / "configs" / "pipeline.yaml")  # the release config (docs/release.md)
     assert release.get("model.url") == "Qwen/Qwen3.8-27B" and release.get("quantization.formats") == ["fp8", "q4_k_m"]
     assert release.get("execution.allow_partial_exports") is False and release.get("selection.graft_missing_source_tensors") == ["mtp."]
+    assert release.get("publish.enabled") is True and release.get("publish.visibility") == "public"
     example = build_config(ROOT / "configs" / "pipeline.example.yaml")
     assert example.get("model.url") == "Qwen/Qwen3.8-27B" and example.get("quantization.formats") == ["fp8", "iq4_xs", "iq3_s"]
     local = build_config(ROOT / "configs" / "acceptance" / "local-cpu.yaml")  # docs/acceptance.md

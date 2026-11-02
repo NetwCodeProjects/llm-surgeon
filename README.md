@@ -50,9 +50,10 @@ Help:     ./main.sh --help
 
 ![The welcome screen of ./main.sh: banner, version, detected GPU, and the next actions](docs/images/start.png)
 
-`--yes` skips confirmation prompts. It never answers the publishing question a new run asks first:
-publish or not, repository name, private or public, and the formats by bit level. Uploads happen only when
-the run's release record says `ready` ([release](docs/release.md)).
+`--yes` skips confirmation prompts. Publishing follows `publish:` in the config: the shipped one uploads
+public without asking. With `enabled: ask`, a new run asks first (`--yes` does not answer it): publish or
+not, repository name, private or public, the formats by bit level. Uploads happen only when the run's
+release record says `ready` ([release](docs/release.md)).
 
 Cloud GPU: workspace on the local disk (`--output-dir /root/ws`), run inside `tmux`, copy `exports/` out
 before the instance stops.
