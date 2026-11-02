@@ -47,9 +47,12 @@ profiles:
   - profiles/qwen3_5.yaml    # Qwen3.5 and Qwen3.8 models
 ```
 
-Profiles are per architecture, not per model. Qwen3.8-27B uses `qwen3_5.yaml` because its `config.json`
+Profiles are per architecture, not per model. Qwen3.8-27B uses qwen3_5.yaml because it's`config.json`
 says `"model_type": "qwen3_5"`. For a model with a different `model_type`, write a profile in
 `configs/profiles/` and list it here.
+
+To find which profile a model needs, open its `config.json`
+(`https://huggingface.co/<org>/<model>/blob/main/config.json`) and read `model_type`.
 
 ## Usage
 
