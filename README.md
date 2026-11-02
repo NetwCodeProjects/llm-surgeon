@@ -62,7 +62,7 @@ in [docs/limitations.md](docs/limitations.md).
 
 | Prerequisite | Why / notes |
 |---|---|
-| Linux x86-64: Ubuntu 22.04/24.04 or WSL2 | other distributions are untested; `--help` and `--dry-run` run anywhere with Python |
+| Ubuntu 22.04/24.04 (a workstation, WSL2, or a cloud GPU's PyTorch template) | other distributions are untested; `--help` and `--dry-run` run anywhere with Python |
 | Python ≥ 3.10 with `venv` (`python3-venv`), or `uv` | to create `.venv`; minimal Ubuntu images lack `python3-venv` |
 | git, cmake, `build-essential` | clone Heretic, build llama.cpp. With `environment.allow_system_packages: true` the run installs them itself (`sudo apt-get`) |
 | NVIDIA GPU + driver | real models (the reference is one B200/B300; native FP8 needs compute capability ≥ 8.9). Never installed by the program. Small models run on CPU (`environment.torch_backend: cpu`, as in [the acceptance config](configs/acceptance/local-cpu.yaml)), without the FP8 loader test |
@@ -80,44 +80,40 @@ in [docs/limitations.md](docs/limitations.md).
 
 `--dry-run` before `.venv` exists needs PyYAML (`python3-yaml`, preinstalled on most Ubuntu images).
 
-## Five-minute quick start
+## Quick start (Ubuntu)
 
 ```bash
+sudo apt-get install -y git cmake build-essential python3-venv   # once; everything else is installed by the program
 git clone https://github.com/NetwCodeProjects/llm-surgeon.git && cd llm-surgeon
-./main.sh                                                   # welcome screen: banner, detected GPU, where to start
-./main.sh --help
-./main.sh --config configs/pipeline.yaml --dry-run          # zero side effects: plan, components, disk estimate
-./main.sh --setup-only --yes                                # bootstrap .venv + provision pinned tool environments
-./main.sh --yes                                             # full pipeline with configs/pipeline.yaml
+./main.sh                     # welcome screen: banner, detected GPU, where to start
+./main.sh --dry-run           # zero side effects: plan, components, disk estimate
+./main.sh --yes               # the run, as configs/pipeline.yaml says (model, budget, formats); edit it first
 ```
 
 ![The welcome screen of ./main.sh: the LLM Surgeon banner, version, the detected GPU, and where to start (review the config, preview with --dry-run, help, run with --yes)](docs/images/start.png)
 
-`./main.sh` without `--yes` asks for confirmation on a terminal and refuses (exit 15) when non-interactive.
+The first `./main.sh --yes` creates `.venv` and installs the tool environments (stage 01, a few minutes; reused
+afterwards). `--yes` acknowledges the compatibility notice and the downloads; without it the run asks on a
+terminal and refuses (exit 15) without one. It never answers the publishing question.
 
-### One B200 on Lambda Cloud (Lambda Stack)
+### On a cloud GPU
 
-```bash
-export HF_TOKEN=...                       # optional for public repos; never written to disk by the platform
-./main.sh --lambda-stack --dry-run
-./main.sh --lambda-stack --setup-only --yes
-./main.sh --lambda-stack --yes            # Qwen/Qwen3.8-27B, optimize 50 trials / 180 min, fp8 + q4_k_m
-```
-
-The ARA reference (`coder3101/Qwen3.8-27B-heretic-ara`) can only be reproduced **approximately**; see
-[examples/qwen-b200.yaml](examples/qwen-b200.yaml) and [docs/heretic-adapter.md](docs/heretic-adapter.md).
-
-### One B300 on Runpod
+Start from the provider's **PyTorch template** (Ubuntu with the NVIDIA driver, the CUDA toolkit, Python, git
+and build tools), for example Runpod's `runpod/pytorch`. The program does not use the image's PyTorch: it
+installs pinned versions in its own environments. Put the workspace on the instance's local disk and copy
+the results out before you stop it. These steps ran on a B300 with runpod/pytorch (CUDA 13.2):
 
 ```bash
-export WS=/root/ws                        # the container (root) disk: faster than a network volume, wiped when the Pod stops
-./main.sh --output-dir $WS --setup-only --yes
+git clone https://github.com/NetwCodeProjects/llm-surgeon.git && cd llm-surgeon
+export WS=/root/ws                        # the container disk: faster than a network volume, wiped when the Pod stops
+tmux new -s run                           # a dropped SSH connection does not end the run
 ./main.sh --output-dir $WS --yes
 aws s3 cp --recursive $WS/exports s3://<bucket>/exports   # copy results out before stopping the Pod
 ```
 
-The `runpod/pytorch` CUDA 13.2 image works: its nvcc (in `/usr/local/cuda`, off the SSH PATH; the
-pipeline finds it) can target the B300's `sm_103`. The release procedure is in [docs/release.md](docs/release.md).
+On images that keep `nvcc` in `/usr/local/cuda` off the SSH `PATH`, the pipeline finds it and builds llama.cpp
+for the GPU (`sm_103` on a B300). The release procedure is in [docs/release.md](docs/release.md). Hosts that
+ship their own ML stack (Lambda Stack) can reuse it instead: [the lambda-stack profile](docs/deployment-lambda.md).
 
 ### Publish to Hugging Face
 
@@ -136,14 +132,6 @@ Only a run whose release record is `ready` is uploaded (`<name>`, `<name>-FP8`, 
 their formats are published), with a generated model card and every file checked remotely; a public upload
 that fails the check is switched to private ([docs/release.md](docs/release.md)).
 
-### Plain Ubuntu
-
-```bash
-./main.sh --ubuntu --dry-run
-./main.sh --ubuntu --setup-only --yes     # reports missing host packages; apt only with allow_system_packages
-./main.sh --config examples/ubuntu-quantize-only.yaml --ubuntu --yes
-```
-
 ## Run, resume, quantize-only
 
 ```bash
@@ -154,6 +142,7 @@ that fails the check is switched to private ([docs/release.md](docs/release.md))
 ./main.sh --model-url org/model --quantize-only --quantizations fp8,iq4_xs,iq3_s --yes
 ./main.sh --model-path /data/model --quantize-only --yes
 ./main.sh --experiment optimize --max-trials 50 --max-runtime-minutes 120 --yes
+./main.sh --config examples/ubuntu-quantize-only.yaml --yes   # quantize an existing model, no abliteration
 ./main.sh --status RUN_ID ; ./main.sh --list-runs ; ./main.sh --cleanup
 ```
 
@@ -181,7 +170,7 @@ actually tested), gates, metric provenance, tool versions and measured time.
 ## Documentation
 
 [run walkthrough](docs/run-walkthrough.md) · [architecture](docs/architecture.md) · [stages](docs/stages.md) · [cli](docs/cli.md) ·
-[configuration](docs/configuration.md) · [Lambda](docs/deployment-lambda.md) · [Ubuntu](docs/deployment-ubuntu.md) ·
+[configuration](docs/configuration.md) · [Ubuntu](docs/deployment-ubuntu.md) · [Lambda Stack profile](docs/deployment-lambda.md) ·
 [Heretic adapter](docs/heretic-adapter.md) · [study lifecycle](docs/study-lifecycle.md) · [quantization](docs/quantization.md) · [evaluation](docs/evaluation.md) · [assessments](docs/assessments.md) ·
 [artifact schema](docs/artifact-schema.md) · [security](docs/security-and-trust.md) · [troubleshooting](docs/troubleshooting.md) ·
 [limitations](docs/limitations.md) · [acceptance](docs/acceptance.md) · [release](docs/release.md) · [implementation log](docs/implementation-log.md) · [original specification](docs/PROJECT_A_AGENT_HANDOFF.md)
