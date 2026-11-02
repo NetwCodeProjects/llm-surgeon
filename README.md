@@ -37,6 +37,19 @@ Disk:  3–4× the model's BF16 size (the 27B release plans 500 GB)
 The tools are installed by the program, pinned, inside the repository and the workspace. A missing host
 package is reported with its install command.
 
+## Profiles
+
+What an architecture needs from the tools (FP8 exclusions, GGUF converter version, tensor grafts), listed in
+`configs/pipeline.yaml`:
+
+```yaml
+profiles:
+  - profiles/qwen3_5.yaml    # model_type qwen3_5: Qwen3.5 and Qwen3.8 checkpoints
+```
+
+Match it to the model's architecture (`model_type` in its `config.json`), not its name. Another
+architecture needs its own file in `configs/profiles/`.
+
 ## Usage
 
 ```text
@@ -56,9 +69,7 @@ public without asking. With `enabled: ask`, a new run asks first (`--yes` does n
 not, repository name, private or public, the formats by bit level. Uploads happen only when the run's
 release record says `ready` ([release](docs/release.md)).
 
-Another model: a different architecture needs its own profile in `configs/profiles/` (the shipped
-`qwen3_5.yaml` covers Qwen3.5 and Qwen3.8); set `evaluation.published_baselines: null` unless you have that
-model's published numbers.
+Another model: set `evaluation.published_baselines: null` unless you have that model's published numbers.
 
 Cloud GPU: workspace on the local disk (`--output-dir /root/ws`), run inside `tmux`, copy `exports/` out
 before the instance stops.
