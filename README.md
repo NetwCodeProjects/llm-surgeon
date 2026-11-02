@@ -75,6 +75,8 @@ git clone https://github.com/NetwCodeProjects/llm-surgeon.git && cd llm-surgeon
 ./main.sh --yes                                             # full pipeline with configs/pipeline.yaml
 ```
 
+![The welcome screen of ./main.sh: the LLM Surgeon banner, version, the detected GPU, and where to start (review the config, preview with --dry-run, help, run with --yes)](docs/images/start.png)
+
 `./main.sh` without `--yes` asks for confirmation on a terminal and refuses (exit 15) when non-interactive.
 
 ### One B200 on Lambda Cloud (Lambda Stack)
