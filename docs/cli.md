@@ -57,15 +57,15 @@ Run 20261102T052210Z-4bc6eb (new)
 [02 acquire]           ok          1.0s  Qwen/Qwen3.5-0.8B @ 2fc0636 · 1.7 GB verified
 [03 published_baselines] skipped        evaluation.published_baselines not set
 [04 prepare_engine]    ok         10.2s  optimize · ARA · seed 154518560
-[05 abliterate] 29:38 · trial 10/200 · ~15m left (budget) · none usable yet (closest: trial 8, 1/25, KL 0.1004)
+[05 abliterate] 29:38 · trial 10/200 (2:41) · ~15m left (budget) · none usable yet (closest: trial 8, 1/25, KL 0.1004)
 ```
 
 - **The live line** (terminal only) is redrawn once a second: elapsed time and what the stage is doing. In
   stage 05 it shows Heretic's phase (loading the model, finding the batch size, exporting a trial), the trial
-  it is on, the best trial within the selection gates so far ("usable"), or the closest one when none is,
+  it is on and how long that trial has run, the best trial within the selection gates so far ("usable"), or the closest one when none is,
   and the time left. The estimate is the average time of the finished trials times the trials left, capped
-  by what is left of `abliteration.max_runtime_minutes` (then marked "(budget)"); there is none before the
-  first trial finishes. Other stages show their latest message; the upload shows bytes sent and files
+  by what is left of `abliteration.max_runtime_minutes` (then marked "(budget)"); until the first trial
+  finishes the line says "estimate when trial N finishes". Other stages show their latest message; the upload shows bytes sent and files
   committed (huggingface_hub's status, every 60 s).
 - **Without a terminal** (a file, a pipe, `nohup`) nothing is redrawn: each stage prints a "started" line,
   every finished Heretic trial a line (`[05 abliterate] trial 3: 17/100 refusals, KL 0.003 ✓ usable`), and

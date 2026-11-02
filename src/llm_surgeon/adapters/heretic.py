@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import configspec
+from ..console import clock
 from ..errors import ExitCode, PipelineError
 from ..fsutil import atomic_write_json, atomic_write_text, read_json, sha256_file, sha256_obj
 from ..telemetry import utc_now
@@ -72,7 +73,7 @@ PHASES = (
 
 
 class TrialWatch:
-    """Live progress of a Heretic run from its own output: the phase it is in, the trial it runs, every finished
+    """Live progress of a Heretic run from its own output: the phase it is in, the trial it runs (and for how long), every finished
     trial's refusals and KL divergence, the best one within the selection gates (or the closest), and the time
     left. The estimate is the average time of the finished trials times the trials left, capped by what is left
     of the budget; there is none before the first trial finishes."""
@@ -87,6 +88,7 @@ class TrialWatch:
         self.trial: int | None = None
         self.planned: int | None = None
         self.first_start: float | None = None
+        self.trial_started: float | None = None
         self.last_done: float | None = None
         self.done: list[tuple[int, int, int, float]] = []  # (trial, refusals, prompts, kl)
         self._refusals: tuple[int, int] | None = None
@@ -99,6 +101,7 @@ class TrialWatch:
         if m := RE_TRIAL.search(text):
             self.trial, self.planned = int(m.group(1)), int(m.group(2))
             self._refusals = None
+            self.trial_started = self.clock()
             if self.first_start is None:
                 self.first_start = self.clock()
             self.report(self.status)
@@ -122,7 +125,7 @@ class TrialWatch:
 
     def eta(self) -> str:
         if not self.done or self.first_start is None or self.planned is None:
-            return "time left after the first trial"
+            return f"estimate when trial {self.trial} finishes" if self.trial is not None else ""
         average = (self.last_done - self.first_start) / len(self.done)
         by_trials = average * max(0, self.planned - self.done[-1][0])
         if self.budget is None:
@@ -145,7 +148,8 @@ class TrialWatch:
         return f"none usable yet (closest: trial {trial}, {refusals}/{prompts}, KL {kl:.4g})"
 
     def status(self) -> str:
-        parts = [f"trial {self.trial}/{self.planned}", self.eta(), self.best()]
+        running = f" ({clock(self.clock() - self.trial_started)})" if self.trial_started is not None else ""
+        parts = [f"trial {self.trial}/{self.planned}{running}", self.eta(), self.best()]
         return " · ".join(p for p in parts if p)
 
 

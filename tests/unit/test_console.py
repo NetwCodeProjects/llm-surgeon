@@ -106,17 +106,18 @@ def test_trial_progress_best_usable_and_estimate():
     w.on_line("stdout", "  * Refusals: 24/25")  # the baseline before trial 1 is not a trial
     assert reports == ["loading the model"]
     w.on_line("stdout", "Running trial 1 of 10...")
-    assert w.status() == "trial 1/10 · time left after the first trial"
+    clock.now = 75
+    assert w.status() == "trial 1/10 (1:15) · estimate when trial 1 finishes"
     clock.now = 240
     w.on_line("stdout", "  * Refusals: 6/25")
     w.on_line("stdout", "  * KL divergence: 0.2100")
     assert milestones == ["trial 1: 6/25 refusals, KL 0.21"]
-    assert w.status() == "trial 1/10 · ~36m left · none usable yet (closest: trial 1, 6/25, KL 0.21)"
+    assert w.status() == "trial 1/10 (4:00) · ~36m left · none usable yet (closest: trial 1, 6/25, KL 0.21)"
     trial(w, clock, 2, 10, 3, 0.094, 240)
     trial(w, clock, 3, 10, 1, 0.1004, 240)
     assert milestones[2] == "trial 3: 1/25 refusals, KL 0.1004", "KL keeps the digits that decide the 0.1 gate"
     assert milestones[1] == "trial 2: 3/25 refusals, KL 0.094 ✓ usable"
-    assert w.status() == "trial 3/10 · ~28m left · best usable: trial 2 (3/25, KL 0.094)"
+    assert w.status() == "trial 3/10 (4:00) · ~28m left · best usable: trial 2 (3/25, KL 0.094)"
 
 
 def test_the_budget_caps_the_estimate():
