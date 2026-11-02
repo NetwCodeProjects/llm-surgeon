@@ -1,5 +1,18 @@
 # LLM Surgeon (Abliterate and Quantize)
 
+[![Version](https://img.shields.io/badge/version-1.0.0-blue)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-%E2%89%A53.10-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL2-lightgrey?logo=linux&logoColor=white)](docs/deployment-ubuntu.md)
+[![GPU verified](https://img.shields.io/badge/GPU%20verified-B300%20%7C%20A100-76B900?logo=nvidia&logoColor=white)](docs/limitations.md)
+[![Last commit](https://img.shields.io/github/last-commit/NetwCodeProjects/llm-surgeon)](https://github.com/NetwCodeProjects/llm-surgeon/commits/main)
+
+[![Heretic](https://img.shields.io/badge/Heretic-171bb98-8A2BE2)](https://github.com/p-e-w/heretic/commit/171bb98b8b9a41c081631b5e678f7133128973e0)
+[![llama.cpp](https://img.shields.io/badge/llama.cpp-b11889-FF8800)](https://github.com/ggml-org/llama.cpp/releases/tag/b11889)
+[![vLLM](https://img.shields.io/badge/vLLM-0.32.0-30A2FF)](https://github.com/vllm-project/vllm)
+[![llm-compressor](https://img.shields.io/badge/llm--compressor-0.14.0.1-555555)](https://github.com/vllm-project/llm-compressor)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
 A reproducible, configuration-first CLI platform that takes a user-selected Hugging Face model through
 **abliteration** (with the [Heretic](https://github.com/p-e-w/heretic) engine), **lightweight
 qualification**, preservation of an immutable **master checkpoint**, and **deployment quantization**
