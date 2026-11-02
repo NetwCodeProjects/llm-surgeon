@@ -56,13 +56,19 @@ To find which profile a model needs, open its `config.json`
 
 ## Changing the model
 
-In `configs/pipeline.yaml`:
+In `configs/pipeline.yaml`, as shipped:
 
-```text
-model.url:                       org/model on Hugging Face
-model.revision:                  a commit of that repository, or null for the latest
-profiles:                        the profile for its model_type
-evaluation.published_baselines:  null, unless you have that model's published numbers
+```yaml
+profiles:
+  - quantization/default.yaml        # every model; keep
+  - profiles/qwen3_5.yaml            # the profile for the model's model_type
+
+model:
+  url: Qwen/Qwen3.8-27B              # org/model on Hugging Face
+  revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0   # a commit of that repository, or null for the latest
+
+evaluation:
+  published_baselines: configs/baselines/qwen3.8-27b.yaml   # null unless you have that model's published numbers
 ```
 
 ## Usage
