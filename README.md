@@ -39,16 +39,17 @@ package is reported with its install command.
 
 ## Profiles
 
-What an architecture needs from the tools (FP8 exclusions, GGUF converter version, tensor grafts), listed in
-`configs/pipeline.yaml`:
+A profile holds the settings one model architecture needs: which tensors FP8 must skip, which GGUF
+converter version to use, which tensors to restore after abliteration. `configs/pipeline.yaml` loads it:
 
 ```yaml
 profiles:
-  - profiles/qwen3_5.yaml    # model_type qwen3_5: Qwen3.5 and Qwen3.8 checkpoints
+  - profiles/qwen3_5.yaml    # Qwen3.5 and Qwen3.8 models
 ```
 
-Match it to the model's architecture (`model_type` in its `config.json`), not its name. Another
-architecture needs its own file in `configs/profiles/`.
+Profiles are per architecture, not per model. Qwen3.8-27B uses `qwen3_5.yaml` because its `config.json`
+says `"model_type": "qwen3_5"`. For a model with a different `model_type`, write a profile in
+`configs/profiles/` and list it here.
 
 ## Usage
 
