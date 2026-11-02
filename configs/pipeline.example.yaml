@@ -159,6 +159,6 @@ storage:
   link_strategy: auto                # auto | hardlink | copy
 
 logging:
-  console_level: info
+  console_level: normal              # normal | info (--verbose) | debug | warning (--quiet)
   redact_prompts: false
   resource_sample_seconds: 15

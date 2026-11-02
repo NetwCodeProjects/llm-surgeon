@@ -60,6 +60,98 @@ RE_TRIAL = re.compile(r"Running trial\s+(\d+)\s+of\s+(\d+)")
 RE_RESTORE = re.compile(r"Restoring model from trial\s+(\d+)")
 RE_SAVED = re.compile(r"Model saved to\s+(.+?)\.?\s*$")
 RE_HASH = re.compile(r"^(.+?):\s+(Hash matches|Hash doesn't match|File not found)")
+# A finished trial's scores (pinned Heretic prints "* Refusals: 1/100" then "* KL divergence: 2.9676").
+RE_REFUSALS = re.compile(r"Refusals:\s*(\d+)\s*/\s*(\d+)")
+RE_KL = re.compile(r"KL divergence:\s*([0-9.]+(?:[eE][-+]?\d+)?)")
+PHASES = (
+    ("Loading model", "loading the model"),
+    ("Determining optimal batch size", "finding the batch size"),
+    ("Calculating", "measuring refusal directions"),
+    ("Saving merged model", "saving the merged model"),
+)
+
+
+class TrialWatch:
+    """Live progress of a Heretic run from its own output: the phase it is in, the trial it runs, every finished
+    trial's refusals and KL divergence, the best one within the selection gates (or the closest), and the time
+    left. The estimate is the average time of the finished trials times the trials left, capped by what is left
+    of the budget; there is none before the first trial finishes."""
+
+    def __init__(self, report, milestone, max_refusal_rate=None, max_kl=None, budget_seconds=None, clock=None) -> None:
+        import time  # noqa: PLC0415
+
+        self.clock = clock or time.monotonic
+        self.report, self.milestone = report, milestone
+        self.max_refusal_rate, self.max_kl, self.budget = max_refusal_rate, max_kl, budget_seconds
+        self.started = self.clock()
+        self.trial: int | None = None
+        self.planned: int | None = None
+        self.first_start: float | None = None
+        self.last_done: float | None = None
+        self.done: list[tuple[int, int, int, float]] = []  # (trial, refusals, prompts, kl)
+        self._refusals: tuple[int, int] | None = None
+
+    def usable(self, refusals: int, prompts: int, kl: float) -> bool:
+        return (self.max_refusal_rate is None or refusals / prompts <= self.max_refusal_rate) and (self.max_kl is None or kl <= self.max_kl)
+
+    def on_line(self, _label: str, line: str) -> None:
+        text = line.strip()
+        if m := RE_TRIAL.search(text):
+            self.trial, self.planned = int(m.group(1)), int(m.group(2))
+            self._refusals = None
+            if self.first_start is None:
+                self.first_start = self.clock()
+            self.report(self.status)
+        elif self.trial is not None and (m := RE_REFUSALS.search(text)):
+            self._refusals = (int(m.group(1)), int(m.group(2)))
+        elif self.trial is not None and self._refusals and (m := RE_KL.search(text)):
+            (refusals, prompts), kl = self._refusals, float(m.group(1))
+            self._refusals = None
+            self.done.append((self.trial, refusals, prompts, kl))
+            self.last_done = self.clock()
+            self.milestone(f"trial {self.trial}: {refusals}/{prompts} refusals, KL {kl:.3f}" + (" ✓ usable" if self.usable(refusals, prompts, kl) else ""))
+            self.report(self.status)
+        elif m := RE_RESTORE.search(text):
+            self.report(f"exporting trial {m.group(1)}")
+        else:
+            for marker, phase in PHASES:
+                if text.startswith(marker) or text.startswith(f"* {marker}"):
+                    if self.trial is None or marker == "Saving merged model":
+                        self.report(phase)
+                    break
+
+    def eta(self) -> str:
+        if not self.done or self.first_start is None or self.planned is None:
+            return "time left after the first trial"
+        average = (self.last_done - self.first_start) / len(self.done)
+        by_trials = average * max(0, self.planned - self.done[-1][0])
+        if self.budget is None:
+            return f"~{_minutes(by_trials)} left"
+        by_budget = max(0.0, self.budget - (self.clock() - self.started))
+        return f"~{_minutes(min(by_trials, by_budget))} left" + (" (budget)" if by_budget < by_trials else "")
+
+    def best(self) -> str:
+        if not self.done:
+            return ""
+        usable = [d for d in self.done if self.usable(d[1], d[2], d[3])]
+        if usable:
+            trial, refusals, prompts, kl = min(usable, key=lambda d: (d[1] / d[2], d[3]))
+            return f"best usable: trial {trial} ({refusals}/{prompts}, KL {kl:.3f})"
+
+        def distance(d):  # how far the trial is outside the gates, as a multiple of each gate
+            return max(d[1] / d[2] / self.max_refusal_rate if self.max_refusal_rate else 0, d[3] / self.max_kl if self.max_kl else 0)
+
+        trial, refusals, prompts, kl = min(self.done, key=distance)
+        return f"none usable yet (closest: {refusals}/{prompts}, KL {kl:.3f})"
+
+    def status(self) -> str:
+        parts = [f"trial {self.trial}/{self.planned}", self.eta(), self.best()]
+        return " · ".join(p for p in parts if p)
+
+
+def _minutes(seconds: float) -> str:
+    minutes = int(round(seconds / 60))
+    return f"{minutes // 60}h{minutes % 60:02d}m" if minutes >= 60 else f"{max(1, minutes)}m"
 
 
 @dataclass

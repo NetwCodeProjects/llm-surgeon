@@ -173,6 +173,6 @@ first (`E_GATE_REQUIREMENT_MISSING`).
 | `storage.artifact_checksums` | string (sha256) | `"sha256"` |  |  |
 | `storage.rehash_on_verify` | boolean | `true` | yes |  |
 | `storage.link_strategy` | string (auto\|hardlink\|copy) | `"auto"` |  |  |
-| `logging.console_level` | string (debug\|info\|warning) | `"info"` | yes |  |
+| `logging.console_level` | string (debug\|info\|normal\|warning) | `"normal"` | yes | normal: one line per stage with its result and a live line for the running one; info (`--verbose`): every message and a line per Heretic trial; debug: also each tool's output; warning (`--quiet`): warnings, errors and the summary. The log files always get everything ([cli.md](cli.md#console-output)). |
 | `logging.redact_prompts` | boolean | `false` |  | Store hashes and lengths instead of prompt, rendered-template and response text in qualification, assessment and comparison records; generation inputs, outputs and tool logs go to a temporary directory outside the workspace. |
 | `logging.resource_sample_seconds` | integer | `15` | yes |  |

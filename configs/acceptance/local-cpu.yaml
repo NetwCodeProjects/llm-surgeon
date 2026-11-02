@@ -62,4 +62,4 @@ execution:
   allow_partial_exports: false       # an acceptance run must produce every export
 
 logging:
-  console_level: info
+  console_level: normal              # normal | info (--verbose) | debug | warning (--quiet)

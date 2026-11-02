@@ -81,6 +81,7 @@ def main() -> int:
         result["huggingface_hub"] = huggingface_hub.__version__
         api = HfApi(token=os.environ["HF_TOKEN"])
         for repo in job["repos"]:
+            print(f"Uploading {repo['repo_id']}", flush=True)  # read by llm_surgeon.publish.UploadWatch
             try:
                 result["repos"].append(publish_repo(api, repo, bool(job.get("private", True))))
             except Exception as exc:  # noqa: BLE001

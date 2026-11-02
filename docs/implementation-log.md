@@ -547,3 +547,26 @@ repository with that visibility, sets an existing one (empty, or holding this up
 `update_repo_settings(private=…)` (huggingface_hub 1.33.0 in the heretic env, signature checked), and
 switches a public repository whose remote check fails to private. The start check no longer treats a public
 repository as taken; only one holding other files is.
+
+## 2026-11-02 — Console output: a trimmed default view with live progress
+
+From the owner's UX test in WSL: stage 05 printed "Searching (new) in …" and then nothing for 45 minutes, so
+nobody could tell whether the run was alive or had found a usable trial yet; every stage's messages
+scrolled past; and huggingface_hub's own progress bars ("Fetching 4 files", "Reconstruction complete") were
+drawn over the stage lines. Agreed design (no TUI: runs happen over SSH, in tmux and piped into logs; a
+single redrawn line carries the one or two facts that change):
+
+- `logging.console_level: normal` (new default): one result line per stage from its receipt and metrics
+  (`summaries.py`), a live line for the running stage (terminal only, redrawn once a second), warnings and
+  errors. `--verbose` (`info`) is the previous output plus a line per trial; `--quiet` (`warning`) is warnings,
+  errors and the summary; `debug` is unchanged. The log files are unchanged at every level.
+- Stage 05: `TrialWatch` reads Heretic's own lines (the pinned engine prints "Running trial N of M",
+  "Refusals: a/b" and "KL divergence: x" per trial), shows the phase, the trial, the best trial within the
+  selection gates ("usable") or the closest, and the time left: average finished-trial time × trials left,
+  capped by the remaining budget. No estimate before the first trial. Without a terminal each finished trial
+  is a line.
+- The upload: `upload_large_folder` prints a status every 60 s (huggingface_hub 1.33.0,
+  `LargeUploadStatus.current_report`); the uploader runs with `PYTHONUNBUFFERED=1` so those lines arrive as
+  printed, and the live line shows bytes sent and files committed.
+- `HF_HUB_DISABLE_PROGRESS_BARS=1` in the control process (huggingface_hub 2.3.0's snapshot bars go through
+  its tqdm wrapper, which honours it).

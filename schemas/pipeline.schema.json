@@ -1086,12 +1086,14 @@
       "properties": {
         "console_level": {
           "type": "string",
+          "description": "normal: one line per stage with its result and a live line for the running one; info (--verbose): every message and a line per Heretic trial; debug: also each tool's output; warning (--quiet): warnings, errors and the summary. The log files always get everything.",
           "enum": [
             "debug",
             "info",
+            "normal",
             "warning"
           ],
-          "default": "info"
+          "default": "normal"
         },
         "redact_prompts": {
           "type": "boolean",

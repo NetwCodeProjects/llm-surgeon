@@ -101,6 +101,8 @@ def main() -> int:
             log("heretic", f"trial {index}")
             time.sleep(trial_seconds)
             study["trials"].append(make_trial(index, recorded))
+            refusals, kl = study["trials"][-1]["values"][:2]
+            print(f"* Evaluating...\n  * Refusals: {round(refusals * 100)}/100\n  * KL divergence: {kl:.4f}", flush=True)  # as the pinned engine
             journal.write_text(json.dumps(study), encoding="utf-8")
             kill_parent_at(f"trial:{index}")
             if mode == "crash-mid" and index == 2:

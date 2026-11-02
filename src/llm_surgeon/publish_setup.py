@@ -436,7 +436,7 @@ def at_end(run, stage_ids: list[str], services, stream) -> int | None:
             stored_visibility(config.get("publish.visibility")),
         )
         p.say(f"  Release record: ready; uploading {sum(len(r['files']) for r in plan['repos'])} files")
-        return upload(run.workspace, run.run_id, plan, generated, token, services, stream)
+        return upload(run.workspace, run.run_id, plan, generated, token, services, stream, run.logger.console)
     except PipelineError as exc:
         p.say(f"Not published: {exc}")
         p.say(f"  After fixing it: {command}")

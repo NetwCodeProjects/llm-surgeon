@@ -50,6 +50,7 @@ from .stages.base import (
     write_receipt,
 )
 from .subprocesses import CommandRunner, child_env
+from .summaries import stage_label, stage_summary
 from .telemetry import EventLogger, Redactor, ResourceSampler, query_gpus, utc_now
 
 
@@ -381,6 +382,8 @@ class Orchestrator:
             if how == "fork" and parent:
                 self._seed_fork(run, workspace / "runs" / parent)
             logger.info("run.start", f"Run {run_id} ({how}); workspace {workspace}", config_hash=config.config_hash)
+            if logger.console.normal:
+                logger.console.line(f"Run {run_id} ({how})")
             if config.get("publish.enabled") is True:
                 logger.info(
                     "run.publish", f"Publishing when ready: {config.get('publish.namespace')}/{config.get('publish.repo_name')} {config.get('publish.formats')}"
@@ -484,7 +487,8 @@ class Orchestrator:
             receipt.update(outcome=SKIPPED, diagnostics={"not_applicable": True, "reason": reason})
             write_receipt(run.receipt_path(stage), receipt)
             run.update_status(stage, status=SKIPPED, reason=reason)
-            run.logger.info(f"stage.{stage.id}", f"[{stage.id} {stage.name}] skipped: {reason}")
+            run.logger.stage("info", f"stage.{stage.id}", f"[{stage.id} {stage.name}] skipped: {reason}")
+            run.logger.console.stage_end(stage_label(stage), SKIPPED, 0.0, reason)
             return SKIPPED, None, False, 0.0
         dep_keys: dict[str, str | None] = {}
         for dep in stage.dependencies(run.config):
@@ -523,7 +527,8 @@ class Orchestrator:
             problems = stage.validate_outputs(run, existing)
             if not problems:
                 run.update_status(stage, status="reused", receipt=str(run.receipt_path(stage)))
-                run.logger.info(f"stage.{stage.id}", f"[{stage.id} {stage.name}] reused valid receipt from {existing.get('ended_utc')}")
+                run.logger.stage("info", f"stage.{stage.id}", f"[{stage.id} {stage.name}] reused valid receipt from {existing.get('ended_utc')}")
+                run.logger.console.stage_end(stage_label(stage), "reused", 0.0, stage_summary(run, stage.id, existing))
                 return SUCCESS, None, bool(existing.get("partial")), 0.0
             run.logger.warning(f"stage.{stage.id}", f"Receipt for {stage.id} no longer valid: {problems[:3]}; re-running")
         if existing:
@@ -531,7 +536,8 @@ class Orchestrator:
             history.mkdir(exist_ok=True)
             os.replace(run.receipt_path(stage), history / f"{stage.receipt_name}.{int(time.time())}")
         run.update_status(stage, status=RUNNING, started_utc=started)
-        run.logger.info(f"stage.{stage.id}", f"[{stage.id} {stage.name}] starting")
+        run.logger.stage("info", f"stage.{stage.id}", f"[{stage.id} {stage.name}] starting")
+        run.logger.console.stage_start(stage_label(stage))
         sampler = ResourceSampler(
             run.run_dir / "metrics" / f"resources-{stage.id}.jsonl",
             run.workspace,
@@ -577,16 +583,21 @@ class Orchestrator:
             stage, status=outcome, started_utc=started, ended_utc=receipt["ended_utc"], duration_s=receipt["duration_s"], receipt=str(run.receipt_path(stage))
         )
         if error is not None:
-            run.logger.error(f"stage.{stage.id}", f"[{stage.id} {stage.name}] {outcome}: {error}")
+            run.logger.stage("error", f"stage.{stage.id}", f"[{stage.id} {stage.name}] {outcome}: {error}")
+            run.logger.console.stage_end(stage_label(stage), outcome, duration, str(error))
         else:
-            run.logger.info(f"stage.{stage.id}", f"[{stage.id} {stage.name}] {outcome}{' (partial)' if ctx.partial else ''} in {duration:.1f}s")
+            run.logger.stage("info", f"stage.{stage.id}", f"[{stage.id} {stage.name}] {outcome}{' (partial)' if ctx.partial else ''} in {duration:.1f}s")
+            summary = stage_summary(run, stage.id, receipt)
+            run.logger.console.stage_end(stage_label(stage), outcome, duration, f"{summary} (partial)" if ctx.partial else summary)
         return outcome, error, ctx.partial, duration
 
     def _print_summary(self, run: Run, rows, final: str, error: PipelineError | None) -> None:
+        run.logger.console.close()
         self._print("")
         self._print(f"Run {run.run_id}: {final}")
-        for stage, outcome, duration in rows:
-            self._print(f"  {stage.id} {stage.name:20s} {outcome:12s} {duration:9.1f}s")
+        if not run.logger.console.normal:  # the normal view already printed a line per stage
+            for stage, outcome, duration in rows:
+                self._print(f"  {stage.id} {stage.name:20s} {outcome:12s} {duration:9.1f}s")
         report = run.run_dir / "reports" / "report.md"
         if report.exists():
             self._print(f"Report: {report}")

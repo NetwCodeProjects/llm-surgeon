@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -101,7 +102,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--yes", "-y", action="store_true", help="acknowledge the compatibility notice and confirm downloads/installs non-interactively")
     p.add_argument("--output-dir", metavar="DIR", help="workspace root (storage.root)")
-    p.add_argument("--log-level", choices=["debug", "info", "warning"], help="console verbosity")
+    level = p.add_mutually_exclusive_group()
+    level.add_argument("--log-level", choices=["debug", "info", "normal", "warning"], help="console detail (default normal; logs always get everything)")
+    level.add_argument("--verbose", "-v", dest="log_level", action="store_const", const="info", help="every message, and a line per Heretic trial")
+    level.add_argument("--quiet", "-q", dest="log_level", action="store_const", const="warning", help="warnings, errors and the summary only")
     info = p.add_argument_group("inspection and maintenance (no pipeline execution)")
     info.add_argument("--print-config", action="store_true", help="print the resolved configuration and exit")
     info.add_argument("--list-stages", action="store_true", help="list stage IDs and exit")
@@ -242,6 +246,9 @@ def config_path_from(args: argparse.Namespace) -> Path | None:
 
 
 def main(argv: list[str] | None = None, services: Any = None, stream=None) -> int:
+    # huggingface_hub draws its own progress bars on the terminal (downloads in stages 02 and 04), over the
+    # pipeline's lines; the console shows the stage's progress instead. Set before huggingface_hub is imported.
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
     stream = stream or sys.stdout
     argv = sys.argv[1:] if argv is None else argv
     if not argv:

@@ -18,9 +18,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .console import LEVELS, Console  # noqa: F401 - LEVELS stays importable from here
 from .fsutil import disk_free_bytes
 
-LEVELS = {"debug": 10, "info": 20, "warning": 30, "error": 40}
 SECRET_ENV_RE = re.compile(r"(TOKEN|SECRET|PASSWORD|API_KEY|ACCESS_KEY|PRIVATE_KEY)", re.I)
 HF_TOKEN_RE = re.compile(r"hf_[A-Za-z0-9]{20,}")
 
@@ -45,13 +45,13 @@ class Redactor:
 
 
 class EventLogger:
-    """Writes ``events.jsonl`` and ``run.log`` under a run's logs directory and echoes to stderr."""
+    """Writes ``events.jsonl`` and ``run.log`` under a run's logs directory; what reaches the terminal is the
+    console's decision (llm_surgeon.console)."""
 
-    def __init__(self, log_dir: Path | None, redactor: Redactor, console_level: str = "info", stream=None) -> None:
+    def __init__(self, log_dir: Path | None, redactor: Redactor, console_level: str = "normal", stream=None, console: Console | None = None) -> None:
         self.log_dir = log_dir
         self.redact = redactor
-        self.console_level = LEVELS.get(console_level, 20)
-        self.stream = stream or sys.stderr
+        self.console = console or Console(stream or sys.stderr, console_level)
         self._lock = threading.Lock()
         if log_dir is not None:
             log_dir.mkdir(parents=True, exist_ok=True)
@@ -60,7 +60,7 @@ class EventLogger:
         log_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir = log_dir
 
-    def log(self, level: str, event: str, message: str, **fields: Any) -> None:
+    def log(self, level: str, event: str, message: str, lifecycle: bool = False, **fields: Any) -> None:
         stamp = utc_now()
         text = self.redact(message)
         record = {"ts": stamp, "level": level, "event": event, "message": text}
@@ -72,13 +72,14 @@ class EventLogger:
                     handle.write(json.dumps(record, ensure_ascii=False) + "\n")
                 with open(self.log_dir / "run.log", "a", encoding="utf-8") as handle:
                     handle.write(f"{stamp} {level.upper():7s} {event}: {text}\n")
-            if LEVELS.get(level, 20) >= self.console_level:
-                prefix = {"warning": "WARN ", "error": "ERROR"}.get(level, "")
-                self.stream.write(f"{prefix + ' ' if prefix else ''}{text}\n")
-                self.stream.flush()
+        self.console.message(level, text, lifecycle=lifecycle)
 
     def info(self, event: str, message: str, **fields: Any) -> None:
         self.log("info", event, message, **fields)
+
+    def stage(self, level: str, event: str, message: str, **fields: Any) -> None:
+        """A stage's start or end line (the normal console view draws these itself)."""
+        self.log(level, event, message, lifecycle=True, **fields)
 
     def warning(self, event: str, message: str, **fields: Any) -> None:
         self.log("warning", event, message, **fields)

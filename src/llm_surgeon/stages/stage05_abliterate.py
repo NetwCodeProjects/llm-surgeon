@@ -101,16 +101,34 @@ class AbliterateStage(Stage):
         native["model"] = H.MODEL_LINK_NAME
         files = H.write_engine_files(study.path, native, None)
         outcome = H.EngineOutcome()
+        on_line = self._watch(ctx, outcome, limits.get("budget_seconds"))
         result = run.runner.run(
             [*record.cmd("heretic")],
             cwd=study.path,
             env=H.engine_env(run.tool_env(record)),
             log_dir=ctx.log_dir,
             name=name,
-            on_line=outcome.on_line,
+            on_line=on_line,
             **limits,
         )
         return result, outcome, {**files, "model_link": link, "result": result.to_dict(), "outcome": outcome.to_dict()}
+
+    @staticmethod
+    def _watch(ctx: StageContext, outcome: H.EngineOutcome, budget_seconds: float | None):
+        """Heretic's output feeds both the outcome record and the console's live line (H.TrialWatch)."""
+        watch = H.TrialWatch(
+            ctx.progress,
+            ctx.milestone,
+            max_refusal_rate=ctx.config.get("selection.max_optimizer_refusal_rate"),
+            max_kl=ctx.config.get("selection.max_optimizer_kl"),
+            budget_seconds=budget_seconds,
+        )
+
+        def on_line(label: str, line: str) -> None:
+            outcome.on_line(label, line)
+            watch.on_line(label, line)
+
+        return on_line
 
     # -- execute ------------------------------------------------------------------
     def execute(self, ctx: StageContext) -> None:
@@ -202,7 +220,7 @@ class AbliterateStage(Stage):
                 name="heretic",
                 grace_seconds=grace,
                 timeout_seconds=(float(budget_min) * 60 + grace) if budget_min else None,
-                on_line=outcome.on_line,
+                on_line=self._watch(ctx, outcome, None),
             )
             engine.update(result=result.to_dict(), outcome=outcome.to_dict())
             if result.interrupted:

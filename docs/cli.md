@@ -33,7 +33,7 @@ and runs `python -m llm_surgeon`. `./main.sh --bootstrap --yes` only creates `.v
 | `--set KEY=VALUE` | any key | repeatable; VALUE is parsed as YAML (`0.08`, `true`, `null`, `[a, b]`); unknown keys and wrong types → exit 3 (`E_CONFIG_INVALID`); a malformed pair, or a key given twice or also set by its dedicated flag → exit 2 (`E_SET_INVALID`); path keys resolve against the current directory. With `--resume`, a changed key needs `--fork` like any override |
 | `--yes`, `-y` | `execution.yes` | acknowledges the compatibility notice and project-local downloads/installs; privileged host steps additionally need their `environment.allow_*` flag |
 | `--output-dir DIR` | `storage.root` | |
-| `--log-level` | `logging.console_level` | |
+| `--log-level debug\|info\|normal\|warning`, `--verbose`/`-v` (= info), `--quiet`/`-q` (= warning) | `logging.console_level` | what the terminal shows ([console output](#console-output)); the log files always get everything |
 | `--print-config`, `--list-stages`, `--list-runs`, `--status RUN_ID` | — | inspection, no execution |
 | `--cleanup [--confirm-cleanup TOKEN]` | — | always shows the plan first; deletes only `.partial` dirs, unregistered candidates and GGUF intermediates, and only with the token printed by the dry listing |
 | `--publish RUN_ID [--hf-namespace NAME] [--repo-name NAME] [--visibility private\|public] [--confirm-publish TOKEN]` | — | uploads a finished run whose release record is `ready` to Hugging Face repositories ([release](release.md)). The visibility is part of the plan its token covers. Prints the plan, then asks "Upload now?" on a terminal; without one, the upload needs the plan's token and `--yes`. Namespace, name, formats and visibility default to the run's `publish.*` choices (the namespace then to the login). New runs ask at the start instead (`publish.enabled: ask`); `--yes` never answers that question |
@@ -44,6 +44,39 @@ Mutually exclusive / invalid combinations (exit 2): `--lambda-stack`+`--ubuntu`;
 
 Every run and dry run starts with the same banner (version and GPU type; a dry run does not query the
 GPU, so it shows `not probed (dry run)`).
+
+## Console output
+
+The default view (`normal`) prints one line per stage with its result, and a live line for the stage that is
+running:
+
+```
+Run 20261102T052210Z-4bc6eb (new)
+[00 preflight]         ok          0.6s  ubuntu · NVIDIA GeForce GTX 1070 Ti (cc 6.1) · 883.0 GB free
+[01 environment]       ok         37.4s  3 tools reused
+[02 acquire]           ok          1.0s  Qwen/Qwen3.5-0.8B @ 2fc0636 · 1.7 GB verified
+[03 published_baselines] skipped        evaluation.published_baselines not set
+[04 prepare_engine]    ok         10.2s  optimize · ARA · seed 154518560
+[05 abliterate] 29:38 · trial 10/200 · ~15m left (budget) · none usable yet (closest: 1/25, KL 0.104)
+```
+
+- **The live line** (terminal only) is redrawn once a second: elapsed time and what the stage is doing. In
+  stage 05 it shows Heretic's phase (loading the model, finding the batch size, exporting a trial), the trial
+  it is on, the best trial within the selection gates so far ("usable"), or the closest one when none is,
+  and the time left. The estimate is the average time of the finished trials times the trials left, capped
+  by what is left of `abliteration.max_runtime_minutes` (then marked "(budget)"); there is none before the
+  first trial finishes. Other stages show their latest message; the upload shows bytes sent and files
+  committed (huggingface_hub's status, every 60 s).
+- **Without a terminal** (a file, a pipe, `nohup`) nothing is redrawn: each stage prints a "started" line,
+  every finished Heretic trial a line (`[05 abliterate] trial 3: 17/100 refusals, KL 0.003 ✓ usable`), and
+  its result line.
+- **Warnings and errors** are printed in every view. The stages' other messages go to `logs/run.log` and
+  `logs/events.jsonl` only.
+- **`--verbose`** (`info`) prints every message as before plus a line per finished trial; `--log-level debug`
+  adds each tool's own output; `--quiet` (`warning`) prints warnings, errors and the summary.
+- Colour (green ok, yellow WARN, red FAILED) only on a terminal and never with `NO_COLOR` set.
+  huggingface_hub's own progress bars are switched off (`HF_HUB_DISABLE_PROGRESS_BARS`); the stage line
+  replaces them.
 
 ## Precedence
 

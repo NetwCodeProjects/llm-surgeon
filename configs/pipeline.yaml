@@ -118,5 +118,5 @@ storage:
   link_strategy: auto                # hardlink master files from the candidate when possible
 
 logging:
-  console_level: info
+  console_level: normal              # normal | info (--verbose) | debug | warning (--quiet)
   redact_prompts: false

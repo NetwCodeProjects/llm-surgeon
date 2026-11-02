@@ -47,7 +47,8 @@ is `runs/<run id>/` with `logs/`, `receipts/`, `configs/`, `metrics/`, `checkpoi
    sha256), the run is locked so a second process cannot run it at the same time, and Ctrl-C is armed: the
    first press stops gracefully after the current step cleans up, a second press aborts.
 
-Then, for **every stage**:
+Then, for **every stage** (on the terminal: a live line while it runs, then one result line; the details below
+go to the logs):
 
 - **Dependencies.** The stage needs the receipts of the stages it depends on (for example 07 needs 05 and
   06). A missing or failed dependency blocks it.
@@ -245,7 +246,8 @@ measured time, usage examples), `reports/run-summary.json` (the same, for progra
 
 ## When the run ends
 
-The summary table lists every stage with its outcome and duration, followed by the report's path. The exit
+Each stage has printed one result line as it finished ([cli.md](cli.md#console-output); `--verbose` and `--quiet` add a
+summary table of every stage's outcome and duration); then come the run's outcome and the report's path. The exit
 code is 0 when everything succeeded. Otherwise it identifies the failing area (the table in
 [cli.md](cli.md#exit-codes)); 130 means interrupted.
 

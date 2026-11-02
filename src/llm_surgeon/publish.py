@@ -33,6 +33,7 @@ from . import model_card
 from . import release_record as R
 from .artifacts import assessments as A
 from .artifacts.manifest import ArtifactRegistry
+from .console import Console
 from .environment.components import ComponentManager, find_uv
 from .errors import ExitCode, PipelineError
 from .fsutil import atomic_write_json, file_inventory, git_blob_sha1, read_json, remove_tree, sha256_obj
@@ -351,8 +352,39 @@ def publish(
     return upload(workspace, run_id, plan, generated, hf_token, services, stream)
 
 
-def upload(workspace: Path, run_id: str, plan: dict[str, Any], generated: dict[str, dict[str, bytes]], hf_token: str, services, stream) -> int:
+RE_UPLOAD_REPO = re.compile(r"^Uploading (\S+)")
+# huggingface_hub 1.33.0 upload_large_folder prints this status every 60 s (LargeUploadStatus.current_report).
+RE_UPLOAD_STATUS = re.compile(r"pre-uploaded: (\d+)/(\d+) \(([^/]+)/([^)]+)\).*committed: (\d+)/(\d+)")
+
+
+class UploadWatch:
+    """The console's live line during the upload, from the uploader's output."""
+
+    def __init__(self, console) -> None:
+        self.console, self.repo, self.status = console, None, "preparing"
+
+    def on_line(self, _label: str, line: str) -> None:
+        if m := RE_UPLOAD_REPO.search(line.strip()):
+            self.repo, self.status = m.group(1), "hashing and checking files"
+        elif m := RE_UPLOAD_STATUS.search(line):
+            self.status = f"{m.group(3)} of {m.group(4)} sent · {m.group(5)}/{m.group(6)} files committed"
+        else:
+            return
+        self.console.activity(f"{self.repo}: {self.status}" if self.repo else self.status)
+
+
+def upload(workspace: Path, run_id: str, plan: dict[str, Any], generated: dict[str, dict[str, bytes]], hf_token: str, services, stream, console=None) -> int:
     """Stage, upload, check every file remotely and record a ``publication`` assessment per artifact."""
+    console = console or Console(sys.stderr)
+    console.stage_start("[publish]")
+    try:
+        return _upload(workspace, run_id, plan, generated, hf_token, services, stream, console)
+    finally:
+        console.close()
+
+
+def _upload(workspace: Path, run_id: str, plan, generated, hf_token: str, services, stream, console) -> int:
+    console.activity("re-hashing the files")
     folders = stage(workspace, plan, generated)
     log_dir = workspace / "runs" / run_id / "logs" / "publish"
     runner, record = heretic_tools(workspace, services.scripts_dir, log_dir, services.probe_factory(True))
@@ -373,12 +405,13 @@ def upload(workspace: Path, run_id: str, plan: dict[str, Any], generated: dict[s
     result = runner.run(
         [*record.script("hf_publish.py"), "--job", str(job_path), "--out", str(out_path)],
         cwd=None,
-        env=record.activate(child_env(HF_TOKEN=hf_token, HF_HOME=str(workspace / "cache" / "hf"))),
+        env=record.activate(child_env(HF_TOKEN=hf_token, HF_HOME=str(workspace / "cache" / "hf"), PYTHONUNBUFFERED="1")),
         log_dir=log_dir,
         name="hf-publish",
         timeout_seconds=24 * 3600,
-        echo=True,
+        on_line=UploadWatch(console).on_line,
     )
+    console.close()
     data = read_json(out_path) if out_path.exists() else {"repos": [], "error": f"no result (exit {result.returncode})"}
     registry = ArtifactRegistry(workspace / "runs" / run_id, workspace)
     report = {"run_id": run_id, "published_utc": utc_now(), "repos": data.get("repos", []), "error": data.get("error")}

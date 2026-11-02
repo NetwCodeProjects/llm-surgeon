@@ -532,7 +532,15 @@ SPEC = S(
         ),
         "logging": S(
             {
-                "console_level": F("string", "info", enum=("debug", "info", "warning"), operational=True),
+                "console_level": F(
+                    "string",
+                    "normal",
+                    enum=("debug", "info", "normal", "warning"),
+                    operational=True,
+                    description="normal: one line per stage with its result and a live line for the running one; info (--verbose): every "
+                    "message and a line per Heretic trial; debug: also each tool's output; warning (--quiet): warnings, errors and the "
+                    "summary. The log files always get everything.",
+                ),
                 "redact_prompts": F(
                     "boolean",
                     False,

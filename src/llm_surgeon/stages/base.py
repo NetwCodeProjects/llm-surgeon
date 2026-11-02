@@ -59,6 +59,15 @@ class StageContext:
     def info(self, message: str, **fields: Any) -> None:
         self.logger.info(f"stage.{self.stage.id}", message, **fields)
 
+    def progress(self, text) -> None:
+        """What the stage is doing now, for the console's live line (a string, or a function re-read on redraw)."""
+        self.logger.console.activity(text)
+
+    def milestone(self, text: str) -> None:
+        """A progress step worth a line in the log, and on the console where the live line is not redrawn."""
+        self.logger.debug(f"stage.{self.stage.id}.progress", text)
+        self.logger.console.milestone(text)
+
     def add_output(self, path: Path | str, kind: str, sha256: str | None = None, size: int | None = None) -> None:
         path = Path(path)
         if size is None and path.is_file():
